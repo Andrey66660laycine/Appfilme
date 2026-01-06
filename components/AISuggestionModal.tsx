@@ -13,7 +13,7 @@ interface AISuggestionModalProps {
 const STEPS = [
     { text: "Conectando à Neural Net...", icon: "hub" },
     { text: "Analisando seu histórico...", icon: "history" },
-    { text: "Filtrando conteúdo antigo (Pós-2015)...", icon: "filter_alt" },
+    { text: "Filtrando conteúdo já assistido...", icon: "filter_alt_off" }, 
     { text: "Buscando alta avaliação crítica...", icon: "star" },
     { text: "Identificando Padrões de Gosto...", icon: "fingerprint" },
     { text: "Finalizando Match...", icon: "check_circle" }
@@ -45,72 +45,94 @@ const AISuggestionModal: React.FC<AISuggestionModalProps> = ({ onClose, onPlay, 
 
   const findMatch = async () => {
       try {
+        setResult(null); // Limpa resultado anterior se houver
+        setLoading(true); // Garante estado de loading
+        setStepIndex(0); // Reseta passos visuais
+
+        // 1. Prepara Lista de Exclusão (Tudo que o usuário já viu)
+        // Usamos um Set para busca O(1) e garantimos que IDs sejam números
+        const watchedIds = new Set(history.map(h => Number(h.id)));
+
         let candidates: Movie[] = [];
-        let seedId: number | null = null;
-        let seedType: 'movie' | 'tv' = 'movie';
-
-        // 1. Tenta pegar algo do histórico para basear a recomendação
+        
+        // 2. Estratégia A: Recomendações baseadas no Histórico
         if (history.length > 0) {
-            // Pega um item aleatório do histórico recente (top 10)
-            const randomItem = history[Math.floor(Math.random() * Math.min(history.length, 10))];
-            seedId = randomItem.id;
-            seedType = randomItem.type;
+            // Pega um item aleatório do histórico (top 15 recentes) para variar a semente
+            const recentHistory = history.slice(0, 15);
+            const randomHistoryItem = recentHistory[Math.floor(Math.random() * recentHistory.length)];
+            
+            if (randomHistoryItem) {
+                const recs = await tmdb.getRecommendations(String(randomHistoryItem.id), randomHistoryItem.type);
+                candidates = [...candidates, ...recs];
+            }
         }
 
-        // 2. Busca recomendações ou Trending
-        if (seedId) {
-            candidates = await tmdb.getRecommendations(String(seedId), seedType);
-        } else {
-            // Se não tem histórico, pega trending misturado
-            const movies = await tmdb.getTrending('movie', isKid);
-            const series = await tmdb.getTrending('tv', isKid);
-            candidates = [...movies, ...series];
-        }
+        // 3. Estratégia B: Trending (Sempre buscar para ter um pool de reserva)
+        // Buscamos tanto filmes quanto séries para ter variedade
+        const [trendingMovies, trendingTV] = await Promise.all([
+            tmdb.getTrending('movie', isKid),
+            tmdb.getTrending('tv', isKid)
+        ]);
+        candidates = [...candidates, ...trendingMovies, ...trendingTV];
 
-        // 3. FILTRO RIGOROSO (O "Pulo do Gato")
-        const filtered = candidates.filter(item => {
+        // 4. O FILTRO DE OURO (Crucial para não repetir)
+        // Filtramos qualquer coisa que esteja no Set de assistidos
+        let pool = candidates.filter(item => {
+            if (!item.id) return false;
+            const itemId = Number(item.id);
+            
+            // Exclui assistidos
+            if (watchedIds.has(itemId)) return false;
+            
+            // Filtro básico de qualidade e data (Relaxado um pouco para garantir resultados)
             const releaseDate = item.release_date || (item as any).first_air_date || '';
             const year = parseInt(releaseDate.split('-')[0] || '0');
             const rating = item.vote_average || 0;
-            const alreadyWatched = history.some(h => h.id === item.id); // Não sugerir o que já viu
-
-            // REGRAS:
-            // 1. Ano >= 2015 (Nada de coisa velha)
-            // 2. Nota >= 7.0 (Só coisa boa)
-            // 3. Não assistido
-            return year >= 2015 && rating >= 7.0 && !alreadyWatched;
+            
+            // Aceita conteúdo pós-2010 com nota razoável
+            return year >= 2010 && rating >= 6.0;
         });
 
-        // 4. Seleção Final
+        // 5. Remove Duplicatas (candidatos podem aparecer em ambas as estratégias)
+        pool = Array.from(new Map(pool.map(item => [item.id, item])).values());
+
+        // 6. Seleção Final
         let chosenOne: Movie;
-        
-        if (filtered.length > 0) {
-            // Pega um aleatório dos filtrados
-            chosenOne = filtered[Math.floor(Math.random() * filtered.length)];
+
+        if (pool.length > 0) {
+            // Pega um aleatório do pool filtrado
+            chosenOne = pool[Math.floor(Math.random() * pool.length)];
         } else {
-            // FALLBACK: Se o filtro for muito rigoroso e não sobrar nada, 
-            // pega o top rated atual do TMDB para garantir qualidade.
-            const topRated = await tmdb.getTrending('all', isKid);
-            chosenOne = topRated[0];
+            // FALLBACK DE ÚLTIMO RECURSO
+            // Se o usuário viu TUDO do pool (improvável), pegamos o trending fresco
+            // mas AINDA ASSIM filtramos o que ele já viu.
+            const freshTrending = await tmdb.getTrending('all', isKid);
+            const freshPool = freshTrending.filter(item => !watchedIds.has(Number(item.id)));
+            
+            if (freshPool.length > 0) {
+                 // Pega aleatório do fallback filtrado
+                 chosenOne = freshPool[Math.floor(Math.random() * freshPool.length)];
+            } else {
+                 // Se realmente não tem nada (conta nova ou viu tudo do TMDB), 
+                 // pega o top 2 ou 3 para não ser sempre o #1
+                 const randomIndex = Math.floor(Math.random() * Math.min(freshTrending.length, 5));
+                 chosenOne = freshTrending[randomIndex] || freshTrending[0];
+            }
         }
 
-        // Garante media_type se vier do trending
+        // Garante media_type se vier do trending genérico
         if (!chosenOne.media_type) {
             chosenOne.media_type = (chosenOne as any).name ? 'tv' : 'movie';
         }
 
-        // Simula um delay de rede para bater com a animação se for muito rápido
-        setTimeout(() => {
-            setResult(chosenOne);
-        }, 2000);
+        // Define o resultado. O useEffect vai lidar com o loading state
+        setResult(chosenOne);
 
       } catch (e) {
           console.error("Erro na AI:", e);
           onClose(); // Fecha se der erro grave
       }
   };
-
-  const getBackdrop = () => result ? tmdb.getBackdropUrl(result.poster_path, 'original') : '';
 
   return (
     <div className="fixed inset-0 z-[150] bg-black/90 backdrop-blur-2xl flex items-center justify-center p-4 animate-fade-in font-display">
@@ -134,13 +156,13 @@ const AISuggestionModal: React.FC<AISuggestionModalProps> = ({ onClose, onPlay, 
                         <div className="absolute inset-0 border-t-4 border-primary rounded-full w-32 h-32 animate-spin"></div>
                         
                         <div className="w-32 h-32 rounded-full flex items-center justify-center bg-black/50 backdrop-blur-md border border-white/10 shadow-[0_0_30px_rgba(242,13,242,0.3)]">
-                            <span className="material-symbols-rounded text-5xl text-white animate-pulse">{STEPS[stepIndex].icon}</span>
+                            <span className="material-symbols-rounded text-5xl text-white animate-pulse">{STEPS[stepIndex]?.icon || 'hourglass_empty'}</span>
                         </div>
                     </div>
 
                     <div className="space-y-2 h-20">
                         <h2 className="text-2xl font-bold text-white tracking-tight animate-text-slide">
-                            {STEPS[stepIndex].text}
+                            {STEPS[stepIndex]?.text || "Processando..."}
                         </h2>
                         <div className="flex justify-center gap-1">
                             <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>

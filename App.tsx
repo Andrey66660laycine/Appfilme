@@ -10,7 +10,7 @@ import ProfileGateway from './pages/ProfileGateway';
 import { tmdb } from './services/tmdbService';
 import { storageService } from './services/storageService';
 import { supabase } from './services/supabase';
-import { Profile } from '../types';
+import { Profile } from './types';
 
 // Context for Current Profile
 export const ProfileContext = createContext<Profile | null>(null);

@@ -403,9 +403,9 @@ const App: React.FC = () => {
                      </div>
                 </div>
 
-                {/* Footer / Next Episode Button */}
+                {/* Footer / Next Episode Button - MOVED HIGHER (bottom-24) to avoid seekbar */}
                 {nextEpisode && (
-                    <div className="absolute bottom-8 right-8 pointer-events-auto animate-slide-up">
+                    <div className="absolute bottom-24 right-8 pointer-events-auto animate-slide-up">
                         <button 
                             onClick={handleNextEpisode}
                             className="bg-white text-black px-6 py-3 rounded-full font-bold font-display shadow-[0_0_25px_rgba(255,255,255,0.4)] flex items-center gap-3 hover:scale-105 active:scale-95 transition-all group"

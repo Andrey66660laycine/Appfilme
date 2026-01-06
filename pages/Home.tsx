@@ -1,7 +1,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { tmdb } from '../services/tmdbService';
-import { Movie } from '../types';
+import { storageService } from '../services/storageService';
+import { Movie, WatchHistoryItem } from '../types';
 
 interface HomeProps {
   onMovieClick: (id: number, type?: 'movie' | 'tv') => void;
@@ -10,6 +11,7 @@ interface HomeProps {
 
 const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
   const [trending, setTrending] = useState<Movie[]>([]);
+  const [watchHistory, setWatchHistory] = useState<WatchHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [inList, setInList] = useState(false);
 
@@ -18,6 +20,10 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
       try {
         const results = await tmdb.getTrending();
         setTrending(results);
+        
+        // Fetch history
+        const history = storageService.getHistory();
+        setWatchHistory(history);
       } catch (err) {
         console.error(err);
       } finally {
@@ -30,7 +36,6 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
   if (loading || !trending.length) return null;
 
   const featured = trending[0];
-  const continueWatching = trending.slice(1, 3);
   const top10 = trending.slice(0, 10);
   const others = trending.slice(10);
 
@@ -38,15 +43,18 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
     onMovieClick(item.id, item.media_type === 'tv' ? 'tv' : 'movie');
   };
 
+  const handleHistoryClick = (item: WatchHistoryItem) => {
+    onMovieClick(item.id, item.type);
+  };
+
   const handleFeaturedPlay = async () => {
      if (featured.media_type === 'tv') {
-         onPlayVideo({ type: 'tv', id: String(featured.id), season: 1, episode: 1 });
+         onPlayVideo({ type: 'tv', id: String(featured.id), tmdbId: featured.id, season: 1, episode: 1 });
      } else {
-         // Need to fetch details to get IMDb ID
          try {
              const details = await tmdb.getMovieDetails(String(featured.id));
              if (details && details.imdb_id) {
-                 onPlayVideo({ type: 'movie', id: details.imdb_id });
+                 onPlayVideo({ type: 'movie', id: details.imdb_id, tmdbId: featured.id });
              } else {
                  console.error("IMDb ID not found");
              }
@@ -121,39 +129,42 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
       {/* CONTENT SECTIONS CONTAINER */}
       <main className="relative z-10 -mt-10 lg:-mt-20 space-y-12 pb-10">
           
-          {/* SECTION: Continue Watching */}
-          <section className="pl-4 lg:pl-16 opacity-0 animate-slide-up" style={{ animationDelay: '0.2s' }}>
-              <div className="flex items-center justify-between pr-4 mb-4">
-                  <h2 className="text-white text-lg md:text-xl font-display font-bold tracking-tight flex items-center gap-2">
-                      Continuar Assistindo
-                      <span className="material-symbols-rounded text-primary text-base animate-pulse">history</span>
-                  </h2>
-                  <button className="text-white/50 text-xs font-semibold hover:text-white transition-colors uppercase tracking-wider">Ver tudo</button>
-              </div>
+          {/* SECTION: Continue Watching (Only if history exists) */}
+          {watchHistory.length > 0 && (
+            <section className="pl-4 lg:pl-16 opacity-0 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+                <div className="flex items-center justify-between pr-4 mb-4">
+                    <h2 className="text-white text-lg md:text-xl font-display font-bold tracking-tight flex items-center gap-2">
+                        Continuar Assistindo
+                        <span className="material-symbols-rounded text-primary text-base animate-pulse">history</span>
+                    </h2>
+                </div>
 
-              <div className="flex overflow-x-auto gap-4 pb-8 pr-4 hide-scrollbar snap-x cursor-grab active:cursor-grabbing">
-                  {continueWatching.map((item, idx) => (
-                    <div key={item.id} onClick={() => handleClick(item)} className="flex-none w-[260px] md:w-[320px] snap-start group relative cursor-pointer">
-                        <div className="relative aspect-video rounded-xl overflow-hidden bg-gray-800 shadow-lg ring-1 ring-white/5 group-hover:ring-primary/50 transition-all duration-500">
-                            <img src={tmdb.getBackdropUrl(item.backdrop_path)} alt={getTitle(item)} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
-                            <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 scale-50 group-hover:scale-100 transition-all duration-300 border border-white/30">
-                                    <span className="material-symbols-rounded text-white text-3xl ml-1">play_arrow</span>
-                                </div>
-                            </div>
-                            {/* Progress Bar */}
-                            <div className="absolute bottom-0 left-0 w-full h-1 bg-white/10">
-                                <div className={`h-full bg-gradient-to-r from-primary to-purple-500 shadow-[0_0_10px_#f20df2] ${idx === 0 ? 'w-[70%]' : 'w-[35%]'}`}></div>
-                            </div>
-                        </div>
-                        <div className="mt-3">
-                            <h3 className="text-white text-sm font-bold truncate group-hover:text-primary transition-colors">{getTitle(item)}</h3>
-                            <p className="text-white/40 text-xs mt-0.5">{item.media_type === 'tv' ? 'Série' : 'Filme'}</p>
-                        </div>
-                    </div>
-                  ))}
-              </div>
-          </section>
+                <div className="flex overflow-x-auto gap-4 pb-8 pr-4 hide-scrollbar snap-x cursor-grab active:cursor-grabbing">
+                    {watchHistory.map((item, idx) => (
+                      <div key={`${item.id}-${item.timestamp}`} onClick={() => handleHistoryClick(item)} className="flex-none w-[260px] md:w-[320px] snap-start group relative cursor-pointer">
+                          <div className="relative aspect-video rounded-xl overflow-hidden bg-gray-800 shadow-lg ring-1 ring-white/5 group-hover:ring-primary/50 transition-all duration-500">
+                              <img src={tmdb.getBackdropUrl(item.backdrop_path)} alt={item.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                              <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                  <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 scale-50 group-hover:scale-100 transition-all duration-300 border border-white/30">
+                                      <span className="material-symbols-rounded text-white text-3xl ml-1">play_arrow</span>
+                                  </div>
+                              </div>
+                              {/* Progress Bar (Fake random progress for demo since we don't track seconds) */}
+                              <div className="absolute bottom-0 left-0 w-full h-1 bg-white/10">
+                                  <div className="h-full bg-gradient-to-r from-primary to-purple-500 shadow-[0_0_10px_#f20df2]" style={{ width: '45%' }}></div>
+                              </div>
+                          </div>
+                          <div className="mt-3">
+                              <h3 className="text-white text-sm font-bold truncate group-hover:text-primary transition-colors">{item.title}</h3>
+                              <p className="text-white/40 text-xs mt-0.5">
+                                {item.type === 'tv' && item.season ? `Temporada ${item.season} • Episódio ${item.episode}` : 'Filme'}
+                              </p>
+                          </div>
+                      </div>
+                    ))}
+                </div>
+            </section>
+          )}
 
           {/* SECTION: Top 10 Trending */}
           <section className="pl-4 lg:pl-16">

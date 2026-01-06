@@ -4,10 +4,13 @@ import Home from './pages/Home';
 import Search from './pages/Search';
 import MovieDetails from './pages/MovieDetails';
 import TVDetails from './pages/TVDetails';
+import { tmdb } from './services/tmdbService';
+import { storageService } from './services/storageService';
 
 interface PlayerState {
   type: 'movie' | 'tv';
   id: string; // IMDb ID for movies, TMDb ID for TV
+  tmdbId?: number; // Needed for history
   season?: number;
   episode?: number;
 }
@@ -16,7 +19,10 @@ const App: React.FC = () => {
   const [hash, setHash] = useState(window.location.hash);
   const [loading, setLoading] = useState(true);
   const [playerState, setPlayerState] = useState<PlayerState | null>(null);
+  const [showPlayerControls, setShowPlayerControls] = useState(true);
+  const [isPlayerLoading, setIsPlayerLoading] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const controlsTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const handleHashChange = () => setHash(window.location.hash);
@@ -49,6 +55,29 @@ const App: React.FC = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Player Controls Interaction Logic
+  useEffect(() => {
+    if (playerState) {
+        const resetControls = () => {
+            setShowPlayerControls(true);
+            if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+            controlsTimeoutRef.current = window.setTimeout(() => {
+                setShowPlayerControls(false);
+            }, 3000);
+        };
+
+        window.addEventListener('mousemove', resetControls);
+        window.addEventListener('touchstart', resetControls);
+        resetControls();
+
+        return () => {
+            window.removeEventListener('mousemove', resetControls);
+            window.removeEventListener('touchstart', resetControls);
+            if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+        };
+    }
+  }, [playerState]);
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const query = searchInputRef.current?.value;
@@ -71,8 +100,47 @@ const App: React.FC = () => {
     window.location.hash = `#/${type}/${id}`;
   };
 
-  const playContent = (config: PlayerState) => {
+  const playContent = async (config: PlayerState) => {
+    setIsPlayerLoading(true);
     setPlayerState(config);
+
+    // Save to History Logic
+    try {
+        let details: any;
+        const searchId = config.tmdbId ? String(config.tmdbId) : config.id; // Use TMDB ID preferably
+
+        if (config.type === 'movie') {
+             // If we only have IMDB ID, we might need to rely on what was passed or fetch. 
+             // Ideally we pass tmdbId. If not, we skip history or fetch by imdb not implemented in this simplified service.
+             // Assuming config.tmdbId is passed for accurate history
+             if (config.tmdbId) {
+                details = await tmdb.getMovieDetails(String(config.tmdbId));
+             }
+        } else {
+             details = await tmdb.getTVDetails(config.id);
+        }
+
+        if (details) {
+            storageService.addToHistory({
+                id: details.id,
+                type: config.type,
+                title: config.type === 'movie' ? details.title : details.name,
+                poster_path: details.poster_path,
+                backdrop_path: details.backdrop_path,
+                vote_average: details.vote_average,
+                timestamp: Date.now(),
+                season: config.season,
+                episode: config.episode
+            });
+        }
+    } catch (e) {
+        console.error("Failed to save history", e);
+    }
+    
+    // Fake loading delay for the "Teleport" effect
+    setTimeout(() => {
+        setIsPlayerLoading(false);
+    }, 2000);
   };
 
   const closePlayer = () => {
@@ -94,11 +162,11 @@ const App: React.FC = () => {
     }
     if (hash.startsWith('#/movie/')) {
       const id = hash.replace('#/movie/', '');
-      return <MovieDetails id={id} onPlay={playContent} />;
+      return <MovieDetails id={id} onPlay={(c) => playContent({...c, tmdbId: Number(id)})} />;
     }
     if (hash.startsWith('#/tv/')) {
       const id = hash.replace('#/tv/', '');
-      return <TVDetails id={id} onPlay={playContent} />;
+      return <TVDetails id={id} onPlay={(c) => playContent({...c, tmdbId: Number(id)})} />;
     }
     if (hash.startsWith('#/search/')) {
       const query = decodeURIComponent(hash.replace('#/search/', ''));
@@ -120,29 +188,53 @@ const App: React.FC = () => {
           <h1 className="mt-4 text-xl font-display font-bold tracking-widest text-white/80 animate-pulse uppercase">StreamVerse</h1>
       </div>
 
-      {/* VIDEO PLAYER MODAL */}
-      <div id="videoModal" className={`fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center transition-opacity duration-300 ${playerState ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
-          <button onClick={closePlayer} className="absolute top-6 right-6 p-2 bg-white/10 rounded-full hover:bg-white/20 transition z-50">
-              <span className="material-symbols-rounded text-white text-3xl">close</span>
-          </button>
-          
-          {playerState && (
-             <div className="w-full h-full md:w-[90%] md:h-[90%] bg-black relative shadow-2xl overflow-hidden rounded-xl">
-               <iframe 
-                  src={getPlayerUrl()} 
-                  width="100%" 
-                  height="100%" 
-                  frameBorder="0" 
-                  allowFullScreen
-                  className="w-full h-full"
-                  title="Player"
-               ></iframe>
-             </div>
-          )}
-      </div>
+      {/* IMMERSIVE NATIVE PLAYER OVERLAY */}
+      {playerState && (
+        <div className="fixed inset-0 z-[100] bg-black animate-fade-in flex flex-col overflow-hidden">
+            
+            {/* Loading/Teleport State */}
+            {isPlayerLoading && (
+                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black">
+                    <div className="w-16 h-16 border-4 border-white/20 border-t-primary rounded-full animate-spin mb-6"></div>
+                    <p className="text-white/60 font-display text-lg tracking-widest uppercase animate-pulse">Carregando Player Nativo...</p>
+                </div>
+            )}
 
-      {/* HEADER - Hide if on Search page (which has its own header) on mobile */}
-      {!isSearchActive && (
+            {/* Custom Native UI Overlay */}
+            <div className={`absolute top-0 left-0 w-full p-6 z-10 transition-opacity duration-500 bg-gradient-to-b from-black/90 to-transparent ${showPlayerControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                 <div className="flex items-center gap-4">
+                     <button onClick={closePlayer} className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center hover:bg-white/20 transition-all hover:scale-105 group">
+                        <span className="material-symbols-rounded text-white text-3xl group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
+                     </button>
+                     <div>
+                        <h2 className="text-white font-bold text-lg drop-shadow-md">
+                            {playerState.type === 'tv' ? `S${playerState.season}:E${playerState.episode}` : 'Reproduzindo'}
+                        </h2>
+                        <span className="text-primary text-xs font-bold uppercase tracking-wider">StreamVerse Premium Player</span>
+                     </div>
+                 </div>
+            </div>
+
+            {/* The Embed (Acting as the video source) */}
+            <div className="flex-1 w-full h-full relative bg-black">
+                 <iframe 
+                    src={getPlayerUrl()} 
+                    width="100%" 
+                    height="100%" 
+                    frameBorder="0" 
+                    allowFullScreen
+                    className="w-full h-full object-cover"
+                    title="Player"
+                    allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                 ></iframe>
+            </div>
+
+        </div>
+      )}
+
+
+      {/* HEADER - Hide if on Search page or Player is open */}
+      {!isSearchActive && !playerState && (
         <nav id="navbar" className="fixed top-0 left-0 w-full z-40 transition-all duration-300 px-4 py-4 lg:px-8">
             <div className="max-w-7xl mx-auto flex items-center justify-between">
                 <div className="flex items-center gap-2 cursor-pointer group" onClick={handleGoHome}>
@@ -167,31 +259,33 @@ const App: React.FC = () => {
       )}
 
       {/* CONTENT AREA */}
-      {renderContent()}
+      {!playerState && renderContent()}
 
       {/* BOTTOM NAVIGATION (Mobile) */}
-      <div className="fixed bottom-0 left-0 w-full glass-dark pb-safe pt-2 px-6 z-50 rounded-t-2xl lg:hidden">
-          <div className="flex justify-between items-center pb-2">
-              <button onClick={handleGoHome} className={`flex flex-col items-center gap-1 group w-16 ${(hash === '#/' || !hash) ? 'text-primary' : 'text-white/50'}`}>
-                  <span className="material-symbols-rounded text-2xl group-hover:-translate-y-1 transition-transform">home</span>
-                  <span className="text-[10px] font-medium">Início</span>
-              </button>
-              <button onClick={handleGoSearch} className={`flex flex-col items-center gap-1 group w-16 ${isSearchActive ? 'text-primary' : 'text-white/50'}`}>
-                  <span className="material-symbols-rounded text-2xl group-hover:-translate-y-1 transition-transform">search</span>
-                  <span className="text-[10px] font-medium">Buscar</span>
-              </button>
-              <button className="text-white/50 flex flex-col items-center gap-1 group hover:text-white transition-colors w-16">
-                  <span className="material-symbols-rounded text-2xl group-hover:-translate-y-1 transition-transform">bookmark</span>
-                  <span className="text-[10px] font-medium">Lista</span>
-              </button>
-              <button className="text-white/50 flex flex-col items-center gap-1 group hover:text-white transition-colors w-16">
-                  <div className="size-6 rounded-full overflow-hidden border border-white/20 group-hover:border-primary transition-colors">
-                      <img src="https://randomuser.me/api/portraits/women/44.jpg" className="w-full h-full object-cover" alt="User" />
-                  </div>
-                  <span className="text-[10px] font-medium">Perfil</span>
-              </button>
-          </div>
-      </div>
+      {!playerState && (
+        <div className="fixed bottom-0 left-0 w-full glass-dark pb-safe pt-2 px-6 z-50 rounded-t-2xl lg:hidden">
+            <div className="flex justify-between items-center pb-2">
+                <button onClick={handleGoHome} className={`flex flex-col items-center gap-1 group w-16 ${(hash === '#/' || !hash) ? 'text-primary' : 'text-white/50'}`}>
+                    <span className="material-symbols-rounded text-2xl group-hover:-translate-y-1 transition-transform">home</span>
+                    <span className="text-[10px] font-medium">Início</span>
+                </button>
+                <button onClick={handleGoSearch} className={`flex flex-col items-center gap-1 group w-16 ${isSearchActive ? 'text-primary' : 'text-white/50'}`}>
+                    <span className="material-symbols-rounded text-2xl group-hover:-translate-y-1 transition-transform">search</span>
+                    <span className="text-[10px] font-medium">Buscar</span>
+                </button>
+                <button className="text-white/50 flex flex-col items-center gap-1 group hover:text-white transition-colors w-16">
+                    <span className="material-symbols-rounded text-2xl group-hover:-translate-y-1 transition-transform">bookmark</span>
+                    <span className="text-[10px] font-medium">Lista</span>
+                </button>
+                <button className="text-white/50 flex flex-col items-center gap-1 group hover:text-white transition-colors w-16">
+                    <div className="size-6 rounded-full overflow-hidden border border-white/20 group-hover:border-primary transition-colors">
+                        <img src="https://randomuser.me/api/portraits/women/44.jpg" className="w-full h-full object-cover" alt="User" />
+                    </div>
+                    <span className="text-[10px] font-medium">Perfil</span>
+                </button>
+            </div>
+        </div>
+      )}
     </>
   );
 };

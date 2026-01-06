@@ -64,3 +64,15 @@ export interface AIRecommendation {
   title: string;
   reason: string;
 }
+
+export interface WatchHistoryItem {
+  id: number;
+  type: 'movie' | 'tv';
+  title: string;
+  poster_path: string;
+  backdrop_path: string;
+  timestamp: number;
+  season?: number;
+  episode?: number;
+  vote_average: number;
+}

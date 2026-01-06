@@ -101,6 +101,29 @@ export const storageService = {
       }
   },
 
+  // FUNCTION TO WIPE ALL USER DATA (Account Deletion)
+  deleteAccountData: async (): Promise<boolean> => {
+      try {
+        const user = await getUser();
+        if (!user) return false;
+
+        // Devido ao RLS e Cascade Delete, deletar os perfis deve limpar o resto.
+        const { error } = await supabase
+            .from('profiles')
+            .delete()
+            .eq('user_id', user.id);
+
+        if (error) {
+            console.error("Falha ao apagar dados da conta:", error.message);
+            return false;
+        }
+        return true;
+      } catch (e) {
+          console.error("Erro crítico ao apagar conta", e);
+          return false;
+      }
+  },
+
   updateWatchStats: async (profileId: string, seconds: number, movieCount: number = 0, episodeCount: number = 0) => {
       try {
         const { data, error } = await supabase

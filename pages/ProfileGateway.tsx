@@ -53,7 +53,7 @@ const FALLBACK_AVATARS = {
 }
 
 const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogout }) => {
-  const [view, setView] = useState<'gateway' | 'editor' | 'dashboard'>('gateway');
+  const [view, setView] = useState<'gateway' | 'editor' | 'dashboard' | 'account_settings'>('gateway');
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
   const [avatarCategory, setAvatarCategory] = useState("Originais");
@@ -62,6 +62,10 @@ const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogo
   const [nameInput, setNameInput] = useState("");
   const [isKidInput, setIsKidInput] = useState(false);
   const [dashboardProfile, setDashboardProfile] = useState<Profile | null>(null);
+  
+  // Account Deletion States
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   useEffect(() => {
     loadProfiles();
@@ -95,6 +99,24 @@ const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogo
         await loadProfiles();
         setView('gateway');
     }
+  };
+  
+  const handleAccountDeletion = async () => {
+      if (deleteConfirmation !== "DELETAR") return;
+      
+      setIsDeletingAccount(true);
+      try {
+          const success = await storageService.deleteAccountData();
+          if (success) {
+              onLogout(); // Sai da conta e vai para o Welcome
+          } else {
+              alert("Erro ao apagar conta. Tente novamente.");
+          }
+      } catch (e) {
+          alert("Ocorreu um erro inesperado.");
+      } finally {
+          setIsDeletingAccount(false);
+      }
   };
 
   const openEditor = (profile: Profile | null) => {
@@ -186,8 +208,63 @@ const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogo
                 </div>
 
                 <div className="mt-16 animate-slide-up flex flex-col items-center gap-4">
+                     <button onClick={() => setView('account_settings')} className="text-white/50 hover:text-white text-sm font-medium flex items-center gap-2 px-4 py-2 hover:bg-white/5 rounded-full transition-colors">
+                        <span className="material-symbols-rounded">settings</span>
+                        Configurações da Conta
+                     </button>
                      <button onClick={onLogout} className="text-red-500 font-bold hover:underline">Sair da Conta</button>
                 </div>
+           </div>
+       )}
+       
+       {/* ACCOUNT SETTINGS VIEW (DELETE ACCOUNT) */}
+       {view === 'account_settings' && (
+           <div className="relative z-10 w-full min-h-screen flex items-center justify-center p-4">
+               <div className="w-full max-w-lg bg-[#121212] border border-white/10 rounded-2xl p-6 md:p-8 animate-fade-in shadow-2xl">
+                   <div className="flex items-center justify-between mb-8">
+                       <h2 className="text-2xl font-bold font-display text-white">Configurações</h2>
+                       <button onClick={() => setView('gateway')} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                           <span className="material-symbols-rounded">close</span>
+                       </button>
+                   </div>
+                   
+                   <div className="space-y-8">
+                       <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4">
+                           <h3 className="text-red-500 font-bold flex items-center gap-2 mb-2">
+                               <span className="material-symbols-rounded">warning</span>
+                               Zona de Perigo
+                           </h3>
+                           <p className="text-white/70 text-sm mb-4">
+                               Apagar sua conta excluirá permanentemente todos os perfis, histórico de visualização e lista. Esta ação não pode ser desfeita.
+                           </p>
+                           
+                           <div className="space-y-3">
+                               <label className="text-xs text-white/50 uppercase tracking-wide font-bold">Confirmação</label>
+                               <input 
+                                   type="text" 
+                                   placeholder='Digite "DELETAR" para confirmar' 
+                                   className="w-full bg-black border border-white/10 rounded-lg px-4 py-3 text-white text-sm focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all outline-none"
+                                   value={deleteConfirmation}
+                                   onChange={(e) => setDeleteConfirmation(e.target.value)}
+                               />
+                               <button 
+                                   onClick={handleAccountDeletion}
+                                   disabled={deleteConfirmation !== "DELETAR" || isDeletingAccount}
+                                   className={`w-full py-3 rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2 ${deleteConfirmation === "DELETAR" ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-white/5 text-white/30 cursor-not-allowed'}`}
+                               >
+                                   {isDeletingAccount ? (
+                                       <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                   ) : (
+                                       <>
+                                           <span className="material-symbols-rounded">delete_forever</span>
+                                           Apagar Conta Permanentemente
+                                       </>
+                                   )}
+                               </button>
+                           </div>
+                       </div>
+                   </div>
+               </div>
            </div>
        )}
 

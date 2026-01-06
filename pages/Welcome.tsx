@@ -14,7 +14,7 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
   const [posters, setPosters] = useState<string[]>([]);
   
   // States for Auth Flow
-  const [view, setView] = useState<'intro' | 'login' | 'register'>('intro');
+  const [view, setView] = useState<'intro' | 'login' | 'register' | 'forgot'>('intro');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [toast, setToast] = useState<{show: boolean, msg: string}>({ show: false, msg: '' });
@@ -28,7 +28,7 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
   const slides = useMemo(() => [
     {
       title: <>Filmes e Séries <br/> <span className="text-primary">Ilimitados.</span></>,
-      desc: 'Assista onde quiser. Cancele quando quiser.'
+      desc: 'Assista onde quiser. Totalmente Grátis.'
     },
     {
       title: <>Baixe e assista <br/> <span className="text-primary">Offline.</span></>,
@@ -104,7 +104,7 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
             }
             showToast("Bem-vindo de volta!");
             onStart();
-        } else {
+        } else if (view === 'register') {
             const { data, error } = await supabase.auth.signUp({
                 email,
                 password,
@@ -124,6 +124,13 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
                  setEmail(email); // Keep email filled
                  setPassword('');
             }
+        } else if (view === 'forgot') {
+            const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                redirectTo: window.location.origin + '#/reset-password', // Garante redirecionamento correto
+            });
+            if (error) throw error;
+            showToast("Email de recuperação enviado! Verifique sua caixa de entrada.");
+            setView('login');
         }
     } catch (error: any) {
         showToast(error.message || "Ocorreu um erro. Tente novamente.");
@@ -151,28 +158,6 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
         }
         .form-view {
             transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-            position: absolute;
-            width: 100%;
-            top: 0;
-            left: 0;
-        }
-        .form-active {
-            opacity: 1;
-            transform: translateX(0);
-            pointer-events: all;
-            position: relative;
-        }
-        .form-hidden-left {
-            opacity: 0;
-            transform: translateX(-50px);
-            pointer-events: none;
-            position: absolute;
-        }
-        .form-hidden-right {
-            opacity: 0;
-            transform: translateX(50px);
-            pointer-events: none;
-            position: absolute;
         }
       `}</style>
 
@@ -263,134 +248,183 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
                     </div>
                 </div>
 
-                <div className="glass-card rounded-3xl p-8 w-full overflow-hidden relative min-h-[500px]">
+                <div className="glass-card rounded-3xl p-8 w-full overflow-hidden relative min-h-[450px]">
                     
-                    {/* LOGIN */}
-                    <div className={`form-view ${view === 'login' ? 'form-active' : 'form-hidden-left'}`}>
-                        <h2 className="text-2xl font-display font-bold text-white mb-2">Bem-vindo</h2>
-                        <p className="text-white/50 text-sm mb-8">Digite suas credenciais para acessar.</p>
-                        
-                        <form onSubmit={handleAuth} className="space-y-5">
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-white/70 ml-1 uppercase tracking-wider">Email</label>
-                                <div className="input-group flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3 transition-all duration-300">
-                                    <span className="material-symbols-rounded text-white/40 text-xl mr-3">mail</span>
-                                    <input 
-                                        type="email" 
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        placeholder="exemplo@email.com" 
-                                        className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" 
-                                        required 
-                                    />
+                    {/* LOGIN FORM */}
+                    {view === 'login' && (
+                        <div className="animate-fade-in">
+                            <h2 className="text-2xl font-display font-bold text-white mb-2">Bem-vindo</h2>
+                            <p className="text-white/50 text-sm mb-8">Digite suas credenciais para acessar.</p>
+                            
+                            <form onSubmit={handleAuth} className="space-y-5">
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-white/70 ml-1 uppercase tracking-wider">Email</label>
+                                    <div className="input-group flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3 transition-all duration-300">
+                                        <span className="material-symbols-rounded text-white/40 text-xl mr-3">mail</span>
+                                        <input 
+                                            type="email" 
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                            placeholder="exemplo@email.com" 
+                                            className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" 
+                                            required 
+                                        />
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-white/70 ml-1 uppercase tracking-wider">Senha</label>
-                                <div className="input-group flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3 transition-all duration-300">
-                                    <span className="material-symbols-rounded text-white/40 text-xl mr-3">lock</span>
-                                    <input 
-                                        type={showPassword ? "text" : "password"} 
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        placeholder="••••••••" 
-                                        className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" 
-                                        required 
-                                    />
-                                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="text-white/40 hover:text-white transition-colors">
-                                        <span className="material-symbols-rounded text-xl">{showPassword ? 'visibility_off' : 'visibility'}</span>
-                                    </button>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-white/70 ml-1 uppercase tracking-wider">Senha</label>
+                                    <div className="input-group flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3 transition-all duration-300">
+                                        <span className="material-symbols-rounded text-white/40 text-xl mr-3">lock</span>
+                                        <input 
+                                            type={showPassword ? "text" : "password"} 
+                                            value={password}
+                                            onChange={(e) => setPassword(e.target.value)}
+                                            placeholder="••••••••" 
+                                            className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" 
+                                            required 
+                                        />
+                                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="text-white/40 hover:text-white transition-colors">
+                                            <span className="material-symbols-rounded text-xl">{showPassword ? 'visibility_off' : 'visibility'}</span>
+                                        </button>
+                                    </div>
                                 </div>
+
+                                <div className="flex justify-end">
+                                    <button type="button" onClick={() => setView('forgot')} className="text-xs text-white/50 hover:text-white transition-colors">Esqueceu a senha?</button>
+                                </div>
+
+                                <button type="submit" disabled={isLoading} className="w-full bg-primary hover:bg-primary-hover text-white font-bold py-3.5 rounded-xl shadow-[0_0_20px_rgba(242,13,242,0.4)] hover:shadow-[0_0_30px_rgba(242,13,242,0.6)] transition-all active:scale-[0.98] flex items-center justify-center gap-2 relative overflow-hidden group">
+                                    {isLoading ? (
+                                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                    ) : (
+                                        <span>Entrar</span>
+                                    )}
+                                </button>
+                            </form>
+
+                            <div className="mt-8 text-center">
+                                <p className="text-sm text-white/50">
+                                    Novo por aqui? 
+                                    <button onClick={() => setView('register')} className="text-primary font-bold hover:underline ml-1">Crie sua conta</button>
+                                </p>
                             </div>
-
-                            <button type="submit" disabled={isLoading} className="w-full bg-primary hover:bg-primary-hover text-white font-bold py-3.5 rounded-xl shadow-[0_0_20px_rgba(242,13,242,0.4)] hover:shadow-[0_0_30px_rgba(242,13,242,0.6)] transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-4 relative overflow-hidden group">
-                                {isLoading ? (
-                                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                                ) : (
-                                    <span>Entrar</span>
-                                )}
-                            </button>
-                        </form>
-
-                        <div className="mt-8 text-center">
-                            <p className="text-sm text-white/50">
-                                Novo por aqui? 
-                                <button onClick={() => setView('register')} className="text-primary font-bold hover:underline ml-1">Crie sua conta</button>
-                            </p>
                         </div>
-                    </div>
+                    )}
 
-                    {/* REGISTER */}
-                    <div className={`form-view ${view === 'register' ? 'form-active' : 'form-hidden-right'}`}>
-                        <h2 className="text-2xl font-display font-bold text-white mb-2">Criar Conta</h2>
-                        <p className="text-white/50 text-sm mb-6">Confirme o e-mail após o cadastro.</p>
-                        
-                        <form onSubmit={handleAuth} className="space-y-4">
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-white/70 ml-1 uppercase tracking-wider">Nome</label>
-                                <div className="input-group flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3 transition-all duration-300">
-                                    <span className="material-symbols-rounded text-white/40 text-xl mr-3">person</span>
-                                    <input 
-                                        type="text" 
-                                        value={name}
-                                        onChange={(e) => setName(e.target.value)}
-                                        placeholder="Seu nome" 
-                                        className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" 
-                                        required 
-                                    />
+                    {/* REGISTER FORM */}
+                    {view === 'register' && (
+                        <div className="animate-fade-in">
+                            <h2 className="text-2xl font-display font-bold text-white mb-2">Criar Conta</h2>
+                            <p className="text-white/50 text-sm mb-6">Confirme o e-mail após o cadastro.</p>
+                            
+                            <form onSubmit={handleAuth} className="space-y-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-white/70 ml-1 uppercase tracking-wider">Nome</label>
+                                    <div className="input-group flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3 transition-all duration-300">
+                                        <span className="material-symbols-rounded text-white/40 text-xl mr-3">person</span>
+                                        <input 
+                                            type="text" 
+                                            value={name}
+                                            onChange={(e) => setName(e.target.value)}
+                                            placeholder="Seu nome" 
+                                            className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" 
+                                            required 
+                                        />
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-white/70 ml-1 uppercase tracking-wider">Email</label>
-                                <div className="input-group flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3 transition-all duration-300">
-                                    <span className="material-symbols-rounded text-white/40 text-xl mr-3">mail</span>
-                                    <input 
-                                        type="email" 
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        placeholder="exemplo@email.com" 
-                                        className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" 
-                                        required 
-                                    />
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-white/70 ml-1 uppercase tracking-wider">Email</label>
+                                    <div className="input-group flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3 transition-all duration-300">
+                                        <span className="material-symbols-rounded text-white/40 text-xl mr-3">mail</span>
+                                        <input 
+                                            type="email" 
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                            placeholder="exemplo@email.com" 
+                                            className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" 
+                                            required 
+                                        />
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-white/70 ml-1 uppercase tracking-wider">Senha</label>
-                                <div className="input-group flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3 transition-all duration-300">
-                                    <span className="material-symbols-rounded text-white/40 text-xl mr-3">lock</span>
-                                    <input 
-                                        type={showPassword ? "text" : "password"} 
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        placeholder="Crie uma senha" 
-                                        className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" 
-                                        required 
-                                    />
-                                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="text-white/40 hover:text-white transition-colors">
-                                        <span className="material-symbols-rounded text-xl">{showPassword ? 'visibility_off' : 'visibility'}</span>
-                                    </button>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-white/70 ml-1 uppercase tracking-wider">Senha</label>
+                                    <div className="input-group flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3 transition-all duration-300">
+                                        <span className="material-symbols-rounded text-white/40 text-xl mr-3">lock</span>
+                                        <input 
+                                            type={showPassword ? "text" : "password"} 
+                                            value={password}
+                                            onChange={(e) => setPassword(e.target.value)}
+                                            placeholder="Crie uma senha" 
+                                            className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" 
+                                            required 
+                                        />
+                                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="text-white/40 hover:text-white transition-colors">
+                                            <span className="material-symbols-rounded text-xl">{showPassword ? 'visibility_off' : 'visibility'}</span>
+                                        </button>
+                                    </div>
                                 </div>
+
+                                <button type="submit" disabled={isLoading} className="w-full bg-white text-black font-bold py-3.5 rounded-xl hover:bg-gray-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-2">
+                                    {isLoading ? (
+                                        <div className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin"></div>
+                                    ) : (
+                                        <span>Cadastrar</span>
+                                    )}
+                                </button>
+                            </form>
+
+                            <div className="mt-8 text-center">
+                                <p className="text-sm text-white/50">
+                                    Já tem uma conta? 
+                                    <button onClick={() => setView('login')} className="text-primary font-bold hover:underline ml-1">Entrar</button>
+                                </p>
                             </div>
-
-                            <button type="submit" disabled={isLoading} className="w-full bg-white text-black font-bold py-3.5 rounded-xl hover:bg-gray-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-2">
-                                {isLoading ? (
-                                    <div className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin"></div>
-                                ) : (
-                                    <span>Cadastrar</span>
-                                )}
-                            </button>
-                        </form>
-
-                        <div className="mt-8 text-center">
-                            <p className="text-sm text-white/50">
-                                Já tem uma conta? 
-                                <button onClick={() => setView('login')} className="text-primary font-bold hover:underline ml-1">Entrar</button>
-                            </p>
                         </div>
-                    </div>
+                    )}
+
+                    {/* FORGOT PASSWORD FORM */}
+                    {view === 'forgot' && (
+                        <div className="animate-fade-in">
+                            <button onClick={() => setView('login')} className="mb-6 flex items-center gap-2 text-white/50 hover:text-white transition-colors text-sm">
+                                <span className="material-symbols-rounded text-lg">arrow_back</span>
+                                Voltar
+                            </button>
+
+                            <h2 className="text-2xl font-display font-bold text-white mb-2">Recuperar Conta</h2>
+                            <p className="text-white/50 text-sm mb-8">Enviaremos um link de redefinição para o seu e-mail.</p>
+                            
+                            <form onSubmit={handleAuth} className="space-y-5">
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-white/70 ml-1 uppercase tracking-wider">Email Cadastrado</label>
+                                    <div className="input-group flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3 transition-all duration-300">
+                                        <span className="material-symbols-rounded text-white/40 text-xl mr-3">mail</span>
+                                        <input 
+                                            type="email" 
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                            placeholder="exemplo@email.com" 
+                                            className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" 
+                                            required 
+                                        />
+                                    </div>
+                                </div>
+
+                                <button type="submit" disabled={isLoading} className="w-full bg-primary hover:bg-primary-hover text-white font-bold py-3.5 rounded-xl shadow-[0_0_20px_rgba(242,13,242,0.4)] hover:shadow-[0_0_30px_rgba(242,13,242,0.6)] transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-4 relative overflow-hidden">
+                                    {isLoading ? (
+                                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                    ) : (
+                                        <>
+                                            <span className="material-symbols-rounded">send</span>
+                                            <span>Enviar Link</span>
+                                        </>
+                                    )}
+                                </button>
+                            </form>
+                        </div>
+                    )}
 
                 </div>
              </div>

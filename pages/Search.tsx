@@ -41,6 +41,7 @@ const Search: React.FC<SearchProps> = ({ query: initialQuery, onMovieClick }) =>
     localStorage.setItem('sv_search_history', JSON.stringify(newHistory));
   };
 
+  // Main search logic (Text based)
   const handleSearch = async (term: string) => {
     if (!term.trim()) {
       setView('default');
@@ -62,6 +63,23 @@ const Search: React.FC<SearchProps> = ({ query: initialQuery, onMovieClick }) =>
       setLoading(false);
     }
   };
+
+  // Logic for genre clicks (Discover API)
+  const handleGenreClick = async (genreId: number, genreName: string) => {
+      setInputValue(genreName); // Visual update only
+      setLoading(true);
+      setView('loading');
+      try {
+          const movies = await tmdb.discoverByGenre(genreId, 'movie');
+          setResults(movies);
+          setView('results');
+      } catch (err) {
+          console.error(err);
+          setView('results');
+      } finally {
+          setLoading(false);
+      }
+  }
 
   const onInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -86,7 +104,7 @@ const Search: React.FC<SearchProps> = ({ query: initialQuery, onMovieClick }) =>
     setInputValue('');
     setView('default');
     setResults([]);
-    // Update hash to empty search if we're on the search page
+    setActiveFilter('Todos');
     if (window.location.hash.startsWith('#/search/')) {
         window.location.hash = '#/search/';
     }
@@ -106,12 +124,6 @@ const Search: React.FC<SearchProps> = ({ query: initialQuery, onMovieClick }) =>
 
   const selectFilter = (filter: string) => {
     setActiveFilter(filter);
-    if (filter !== 'Todos') {
-      setInputValue(filter);
-      handleSearch(filter);
-    } else {
-        clearSearch();
-    }
   };
   
   const handleItemClick = (item: Movie) => {
@@ -121,11 +133,22 @@ const Search: React.FC<SearchProps> = ({ query: initialQuery, onMovieClick }) =>
   const getTitle = (item: Movie) => item.title || (item as any).name || 'Untitled';
 
   const genres = [
-    { name: 'Ação', img: 'https://image.tmdb.org/t/p/w500/yDHYTfA3R0jFYba16jBB1ef8oIt.jpg', color: 'from-purple-900' },
-    { name: 'Sci-Fi', img: 'https://image.tmdb.org/t/p/w500/8rpDcsfLJypbO6vREc05475qg9e.jpg', color: 'from-teal-900' },
-    { name: 'Terror', img: 'https://image.tmdb.org/t/p/w500/5aUVLiqcW0kFTBfGsCWjvLas91w.jpg', color: 'from-red-900' },
-    { name: 'Comédia', img: 'https://image.tmdb.org/t/p/w500/t6HIqrRAclMCA60NsSmeqe9RmNV.jpg', color: 'from-yellow-600' },
+    { id: 28, name: 'Ação', img: 'https://image.tmdb.org/t/p/w500/yDHYTfA3R0jFYba16jBB1ef8oIt.jpg', color: 'from-purple-900' },
+    { id: 878, name: 'Sci-Fi', img: 'https://image.tmdb.org/t/p/w500/8rpDcsfLJypbO6vREc05475qg9e.jpg', color: 'from-teal-900' },
+    { id: 27, name: 'Terror', img: 'https://image.tmdb.org/t/p/w500/5aUVLiqcW0kFTBfGsCWjvLas91w.jpg', color: 'from-red-900' },
+    { id: 35, name: 'Comédia', img: 'https://image.tmdb.org/t/p/w500/t6HIqrRAclMCA60NsSmeqe9RmNV.jpg', color: 'from-yellow-600' },
+    { id: 10749, name: 'Romance', img: 'https://image.tmdb.org/t/p/w500/6oom5QYQ2yQTMJIbnvbkBL9cHo6.jpg', color: 'from-pink-900' },
+    { id: 16, name: 'Animação', img: 'https://image.tmdb.org/t/p/w500/4n8QNNdk4BOX9Dslfbz5Dy6j1HK.jpg', color: 'from-blue-600' },
   ];
+
+  // Filtering Logic for Display
+  const filteredResults = results.filter(item => {
+      if (activeFilter === 'Todos') return true;
+      if (activeFilter === 'Filmes') return item.media_type === 'movie';
+      if (activeFilter === 'Séries') return item.media_type === 'tv';
+      if (activeFilter === '4K UHD') return item.vote_average > 7.5; // Simulação
+      return true;
+  });
 
   return (
     <div className="bg-background-dark min-h-screen animate-fade-in pb-20">
@@ -163,7 +186,7 @@ const Search: React.FC<SearchProps> = ({ query: initialQuery, onMovieClick }) =>
 
           {/* Filter Chips */}
           <div className="flex gap-2 overflow-x-auto pb-2 hide-scrollbar -mx-4 px-4">
-            {['Todos', 'Filmes', 'Séries', 'Originais', '4K UHD'].map(f => (
+            {['Todos', 'Filmes', 'Séries', '4K UHD'].map(f => (
               <button 
                 key={f}
                 onClick={() => selectFilter(f)} 
@@ -222,8 +245,8 @@ const Search: React.FC<SearchProps> = ({ query: initialQuery, onMovieClick }) =>
               <div className="grid grid-cols-2 gap-3">
                 {genres.map(genre => (
                   <div 
-                    key={genre.name}
-                    onClick={() => { setInputValue(genre.name); handleSearch(genre.name); }}
+                    key={genre.id}
+                    onClick={() => handleGenreClick(genre.id, genre.name)}
                     className="relative h-24 rounded-xl overflow-hidden group cursor-pointer border border-white/5 hover:border-primary/50 transition-all duration-300"
                   >
                     <div className={`absolute inset-0 bg-gradient-to-br ${genre.color} via-transparent to-black z-0`}></div>
@@ -260,9 +283,9 @@ const Search: React.FC<SearchProps> = ({ query: initialQuery, onMovieClick }) =>
               <h2 className="text-lg font-bold text-white">Resultados para "<span className="text-primary">{inputValue}</span>"</h2>
             </div>
             
-            {results.length > 0 ? (
+            {filteredResults.length > 0 ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                {results.map((item, index) => (
+                {filteredResults.map((item, index) => (
                   <div 
                     key={item.id} 
                     onClick={() => handleItemClick(item)}

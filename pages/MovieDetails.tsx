@@ -1,7 +1,9 @@
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useContext } from 'react';
 import { tmdb } from '../services/tmdbService';
+import { storageService } from '../services/storageService';
 import { MovieDetails as MovieDetailsType, CastMember } from '../types';
+import { ProfileContext } from '../App';
 
 interface MovieDetailsProps {
   id: string;
@@ -9,6 +11,7 @@ interface MovieDetailsProps {
 }
 
 const MovieDetails: React.FC<MovieDetailsProps> = ({ id, onPlay }) => {
+  const currentProfile = useContext(ProfileContext);
   const [movie, setMovie] = useState<MovieDetailsType | null>(null);
   const [cast, setCast] = useState<CastMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,6 +35,10 @@ const MovieDetails: React.FC<MovieDetailsProps> = ({ id, onPlay }) => {
         ]);
         setMovie(movieData);
         setCast(castData);
+        if (movieData && currentProfile) {
+            const exists = await storageService.isInLibrary(currentProfile.id, movieData.id, 'movie');
+            setInList(exists);
+        }
       } catch (err) {
         console.error(err);
       } finally {
@@ -40,7 +47,7 @@ const MovieDetails: React.FC<MovieDetailsProps> = ({ id, onPlay }) => {
     };
     fetchData();
     window.scrollTo(0, 0);
-  }, [id]);
+  }, [id, currentProfile]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -69,10 +76,33 @@ const MovieDetails: React.FC<MovieDetailsProps> = ({ id, onPlay }) => {
     }, 3000);
   };
 
-  const toggleMyList = () => {
-    const newState = !inList;
-    setInList(newState);
-    showToast(newState ? 'playlist_add_check' : 'remove_done', newState ? 'Adicionado à Minha Lista' : 'Removido da lista');
+  const toggleMyList = async () => {
+    if (!movie || !currentProfile) return;
+    
+    if (inList) {
+        const success = await storageService.removeFromLibrary(currentProfile.id, movie.id, 'movie');
+        if (success) {
+            setInList(false);
+            showToast('remove_done', 'Removido da lista');
+        }
+    } else {
+        const success = await storageService.addToLibrary(currentProfile.id, {
+            id: movie.id,
+            type: 'movie',
+            title: movie.title,
+            poster_path: movie.poster_path,
+            backdrop_path: movie.backdrop_path,
+            vote_average: movie.vote_average,
+            release_date: movie.release_date,
+            addedAt: Date.now()
+        });
+        if (success) {
+            setInList(true);
+            showToast('playlist_add_check', 'Adicionado à Minha Lista');
+        } else {
+            showToast('error', 'Erro ao adicionar');
+        }
+    }
   };
 
   if (loading) return (

@@ -7,9 +7,18 @@ const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
 const LANG = 'pt-BR';
 
 export const tmdb = {
-  getTrending: async (): Promise<Movie[]> => {
+  getTrending: async (type: 'all' | 'movie' | 'tv' = 'all', isKid: boolean = false): Promise<Movie[]> => {
     try {
-      const res = await fetch(`${BASE_URL}/trending/all/week?api_key=${API_KEY}&language=${LANG}`);
+      let url = `${BASE_URL}/trending/${type}/week?api_key=${API_KEY}&language=${LANG}`;
+      
+      // Se for Kids, usamos discover para filtrar melhor
+      if (isKid) {
+          // Gêneros: 16 (Animation), 10751 (Family). Excluir: 27 (Horror), 53 (Thriller), 80 (Crime)
+          const typePath = type === 'all' ? 'movie' : type; // Default to movie for discovery mix
+          url = `${BASE_URL}/discover/${typePath}?api_key=${API_KEY}&language=${LANG}&sort_by=popularity.desc&with_genres=16,10751&without_genres=27,53,80&include_adult=false`;
+      }
+
+      const res = await fetch(url);
       const data = await res.json();
       return data.results || [];
     } catch (error) {
@@ -18,15 +27,50 @@ export const tmdb = {
     }
   },
 
+  getOriginals: async (): Promise<Movie[]> => {
+      try {
+          // Simula "Originais" buscando filmes de alta avaliação e popularidade
+          const url = `${BASE_URL}/discover/tv?api_key=${API_KEY}&language=${LANG}&sort_by=vote_average.desc&vote_count.gte=1000&include_adult=false&with_networks=213`; // 213 is Netflix ID example, or just high rated
+          const res = await fetch(url);
+          const data = await res.json();
+          return data.results || [];
+      } catch (e) {
+          return [];
+      }
+  },
+
   searchMovies: async (query: string): Promise<Movie[]> => {
     try {
-      const res = await fetch(`${BASE_URL}/search/multi?api_key=${API_KEY}&query=${encodeURIComponent(query)}&language=${LANG}`);
+      const res = await fetch(`${BASE_URL}/search/multi?api_key=${API_KEY}&query=${encodeURIComponent(query)}&language=${LANG}&include_adult=false`);
       const data = await res.json();
       return data.results || [];
     } catch (error) {
       console.error("Failed to search:", error);
       return [];
     }
+  },
+
+  discoverByGenre: async (genreId: number, type: 'movie' | 'tv' = 'movie'): Promise<Movie[]> => {
+    try {
+        const res = await fetch(`${BASE_URL}/discover/${type}?api_key=${API_KEY}&language=${LANG}&with_genres=${genreId}&sort_by=popularity.desc&include_adult=false`);
+        const data = await res.json();
+        // Mapeia para adicionar media_type pois o discover não retorna isso explicitamente sempre
+        return (data.results || []).map((item: any) => ({ ...item, media_type: type }));
+    } catch (error) {
+        console.error("Failed to discover by genre:", error);
+        return [];
+    }
+  },
+
+  getRecommendations: async (id: string, type: 'movie' | 'tv'): Promise<Movie[]> => {
+      try {
+          const res = await fetch(`${BASE_URL}/${type}/${id}/recommendations?api_key=${API_KEY}&language=${LANG}`);
+          const data = await res.json();
+          return (data.results || []).map((item: any) => ({ ...item, media_type: type }));
+      } catch (error) {
+          console.error("Failed to fetch recommendations:", error);
+          return [];
+      }
   },
 
   getMovieDetails: async (id: string): Promise<MovieDetails | null> => {

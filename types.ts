@@ -60,11 +60,6 @@ export interface CastMember {
   profile_path: string;
 }
 
-export interface AIRecommendation {
-  title: string;
-  reason: string;
-}
-
 export interface WatchHistoryItem {
   id: number;
   type: 'movie' | 'tv';
@@ -75,4 +70,28 @@ export interface WatchHistoryItem {
   season?: number;
   episode?: number;
   vote_average: number;
+}
+
+export interface LibraryItem {
+  id: number;
+  type: 'movie' | 'tv';
+  title: string;
+  poster_path: string;
+  backdrop_path: string;
+  vote_average: number;
+  release_date?: string;
+  total_episodes?: number; 
+  addedAt: number;
+}
+
+export interface Profile {
+  id: string;
+  user_id: string;
+  name: string;
+  avatar: string;
+  is_kid: boolean;
+  is_premium: boolean; // Novo campo
+  total_watch_time: number;
+  total_movies_watched: number;
+  total_episodes_watched: number;
 }

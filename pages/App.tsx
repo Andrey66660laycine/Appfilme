@@ -10,7 +10,7 @@ import ProfileGateway from './pages/ProfileGateway';
 import { tmdb } from './services/tmdbService';
 import { storageService } from './services/storageService';
 import { supabase } from './services/supabase';
-import { Profile } from './types';
+import { Profile } from '../types';
 
 // Context for Current Profile
 export const ProfileContext = createContext<Profile | null>(null);
@@ -34,8 +34,14 @@ const App: React.FC = () => {
   const [showPlayerControls, setShowPlayerControls] = useState(true);
   const [isPlayerLoading, setIsPlayerLoading] = useState(false);
   
+  // Ads States (Mandatory now)
+  const [pendingPlayerState, setPendingPlayerState] = useState<PlayerState | null>(null);
+  const [showAds, setShowAds] = useState(false);
+  const [adTimer, setAdTimer] = useState(15); // Tempo sugerido para o anúncio
+  
   const searchInputRef = useRef<HTMLInputElement>(null);
   const controlsTimeoutRef = useRef<number | null>(null);
+  const adContainerRef = useRef<HTMLDivElement>(null);
 
   // --- AUTH CHECK ---
   useEffect(() => {
@@ -111,6 +117,45 @@ const App: React.FC = () => {
     }
   }, [playerState]);
 
+  // --- ADSTERRA SCRIPT INJECTION ---
+  useEffect(() => {
+      if (showAds && adContainerRef.current) {
+          // Timer countdown
+          setAdTimer(15);
+          const timerInterval = setInterval(() => {
+              setAdTimer(prev => prev > 0 ? prev - 1 : 0);
+          }, 1000);
+
+          // Limpa scripts anteriores para evitar duplicação
+          adContainerRef.current.innerHTML = '';
+
+          // Container div necessário para o script do banner
+          const adDiv = document.createElement('div');
+          adDiv.id = "container-19c1f4948dd443234ef09fb67ff9b5c5";
+          adContainerRef.current.appendChild(adDiv);
+
+          // Script 1: Banner (Invoke)
+          const script1 = document.createElement('script');
+          script1.src = "https://pl28417823.effectivegatecpm.com/19c1f4948dd443234ef09fb67ff9b5c5/invoke.js";
+          script1.async = true;
+          script1.setAttribute('data-cfasync', 'false');
+          adContainerRef.current.appendChild(script1);
+
+          // Script 2: Popunder (Direct)
+          const script2 = document.createElement('script');
+          script2.src = "https://pl28417816.effectivegatecpm.com/0f/00/cf/0f00cf8d31071e91267999001af02e64.js";
+          script2.async = true;
+          document.body.appendChild(script2); // Popunders geralmente funcionam melhor no body
+
+          return () => {
+              clearInterval(timerInterval);
+              if (document.body.contains(script2)) {
+                  document.body.removeChild(script2);
+              }
+          };
+      }
+  }, [showAds]);
+
   // --- HANDLERS ---
   const handleStartApp = () => { /* Handled by Auth Listener */ };
   
@@ -137,9 +182,13 @@ const App: React.FC = () => {
   const handleGoLibrary = () => { window.location.hash = '#/library'; window.scrollTo(0,0); }
   const handleItemClick = (id: number, type: 'movie' | 'tv' = 'movie') => { window.location.hash = `#/${type}/${id}`; };
 
-  const playContent = async (config: PlayerState) => {
+  // --- PLAY LOGIC ---
+
+  // FUNÇÃO INTERNA: Inicia o player e salva histórico
+  const startVideoPlayer = async (config: PlayerState) => {
     setIsPlayerLoading(true);
     setPlayerState(config);
+    setPendingPlayerState(null); // Limpa pendência
 
     try {
         if (!currentProfile) return;
@@ -154,7 +203,8 @@ const App: React.FC = () => {
         }
 
         if (details) {
-            storageService.addToHistory(currentProfile.id, {
+            // Salva no histórico e incrementa estatísticas
+            await storageService.addToHistory(currentProfile.id, {
                 id: details.id,
                 type: config.type,
                 title: config.type === 'movie' ? details.title : details.name,
@@ -173,6 +223,22 @@ const App: React.FC = () => {
     setTimeout(() => { setIsPlayerLoading(false); }, 2000);
   };
 
+  // FUNÇÃO PRINCIPAL: OBRIGA A VER O ANÚNCIO
+  const handlePlayRequest = (config: PlayerState) => {
+      if (!currentProfile) return;
+
+      console.log("Solicitação de Play. Iniciando Anúncios...");
+      setPendingPlayerState(config);
+      setShowAds(true);
+  };
+
+  const closeAdsAndPlay = () => {
+      setShowAds(false);
+      if (pendingPlayerState) {
+          startVideoPlayer(pendingPlayerState);
+      }
+  };
+
   const closePlayer = () => { setPlayerState(null); };
 
   const getPlayerUrl = () => {
@@ -184,17 +250,18 @@ const App: React.FC = () => {
     }
   };
 
+  // --- RENDER CONTENT ---
   const renderContent = () => {
     if (!hash || hash === '#/') {
-      return <Home onMovieClick={(id, type) => handleItemClick(id, type)} onPlayVideo={playContent} />;
+      return <Home onMovieClick={(id, type) => handleItemClick(id, type)} onPlayVideo={handlePlayRequest} />;
     }
     if (hash.startsWith('#/movie/')) {
       const id = hash.replace('#/movie/', '');
-      return <MovieDetails id={id} onPlay={(c) => playContent({...c, tmdbId: Number(id)})} />;
+      return <MovieDetails id={id} onPlay={(c) => handlePlayRequest({...c, tmdbId: Number(id)})} />;
     }
     if (hash.startsWith('#/tv/')) {
       const id = hash.replace('#/tv/', '');
-      return <TVDetails id={id} onPlay={(c) => playContent({...c, tmdbId: Number(id)})} />;
+      return <TVDetails id={id} onPlay={(c) => handlePlayRequest({...c, tmdbId: Number(id)})} />;
     }
     if (hash.startsWith('#/search/')) {
       const query = decodeURIComponent(hash.replace('#/search/', ''));
@@ -203,7 +270,7 @@ const App: React.FC = () => {
     if (hash === '#/library') {
       return <Library onMovieClick={(id, type) => handleItemClick(id, type)} />;
     }
-    return <Home onMovieClick={(id, type) => handleItemClick(id, type)} onPlayVideo={playContent} />;
+    return <Home onMovieClick={(id, type) => handleItemClick(id, type)} onPlayVideo={handlePlayRequest} />;
   };
 
   const isSearchActive = hash.startsWith('#/search/');
@@ -224,8 +291,38 @@ const App: React.FC = () => {
   return (
     <ProfileContext.Provider value={currentProfile}>
       
+      {/* ADS OVERLAY (MANDATORY) */}
+      {showAds && (
+          <div className="fixed inset-0 z-[150] bg-black flex flex-col items-center justify-center p-4 animate-fade-in">
+              <div className="absolute top-6 right-6 z-50">
+                  <button 
+                    onClick={closeAdsAndPlay} 
+                    // Disabled while timer > 0 if you wanted forced view, but for UX enabling it always or after 5s is better.
+                    // Let's keep it enabled but with countdown text
+                    className="bg-white/10 hover:bg-white/20 border border-white/20 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 transition-all hover:scale-105 active:scale-95 backdrop-blur-md"
+                  >
+                      {adTimer > 0 ? `Aguarde ${adTimer}s` : 'Pular Anúncio'} 
+                      <span className="material-symbols-rounded">skip_next</span>
+                  </button>
+              </div>
+              
+              <div className="text-white mb-8 text-center animate-pulse z-40">
+                  <p className="text-2xl font-display font-bold mb-2">Apoie o StreamVerse</p>
+                  <p className="text-sm text-white/50">O vídeo começará após o anúncio.</p>
+              </div>
+              
+              {/* ADSTERRA CONTAINER */}
+              <div 
+                ref={adContainerRef} 
+                className="bg-white p-2 rounded-xl max-w-full overflow-hidden min-h-[250px] min-w-[300px] flex items-center justify-center shadow-2xl z-40 relative"
+              >
+                  {/* Scripts injected by useEffect */}
+              </div>
+          </div>
+      )}
+
       {/* IMMERSIVE NATIVE PLAYER OVERLAY */}
-      {playerState && (
+      {playerState && !showAds && (
         <div className="fixed inset-0 z-[100] bg-black animate-fade-in flex flex-col overflow-hidden">
             {isPlayerLoading && (
                 <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black">
@@ -242,7 +339,9 @@ const App: React.FC = () => {
                         <h2 className="text-white font-bold text-lg drop-shadow-md">
                             {playerState.type === 'tv' ? `S${playerState.season}:E${playerState.episode}` : 'Reproduzindo'}
                         </h2>
-                        <span className="text-primary text-xs font-bold uppercase tracking-wider">StreamVerse Premium</span>
+                        <span className="text-primary text-xs font-bold uppercase tracking-wider">
+                            StreamVerse
+                        </span>
                      </div>
                  </div>
             </div>
@@ -253,25 +352,27 @@ const App: React.FC = () => {
       )}
 
       {/* HEADER */}
-      {!isSearchActive && !isLibraryActive && !playerState && (
+      {!isSearchActive && !isLibraryActive && !playerState && !showAds && (
         <nav id="navbar" className="fixed top-0 left-0 w-full z-40 transition-all duration-300 px-4 py-4 lg:px-8">
             <div className="max-w-7xl mx-auto flex items-center justify-between">
                 <div className="flex items-center gap-2 cursor-pointer group" onClick={handleGoHome}>
-                    <div className="text-primary flex items-center justify-center size-10 rounded-full bg-white/5 backdrop-blur-md border border-white/10 group-hover:bg-primary group-hover:text-white transition-all duration-300">
+                    <div className="text-primary flex items-center justify-center size-10 rounded-full bg-white/5 backdrop-blur-md border border-white/10 group-hover:bg-primary group-hover:text-white transition-all duration-300 shadow-[0_0_15px_rgba(242,13,242,0.3)]">
                         <span className="material-symbols-rounded text-[24px]">movie_filter</span>
                     </div>
-                    <span className="font-display font-bold text-xl tracking-tight hidden md:block">StreamVerse</span>
+                    <span className="font-display font-bold text-xl tracking-tight hidden md:block text-shadow-sm">StreamVerse</span>
                 </div>
                 
                 {/* Search Bar */}
-                <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 bg-black/20 backdrop-blur-md rounded-full border border-white/5 px-3 py-2 focus-within:bg-black/40 focus-within:border-primary/50 transition-all w-[140px] md:w-[260px]">
-                    <span className="material-symbols-rounded text-white/50 text-xl">search</span>
-                    <input ref={searchInputRef} type="text" placeholder="Buscar..." className="bg-transparent border-none outline-none text-sm text-white placeholder-white/50 w-full p-0 focus:ring-0" />
+                <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 bg-black/40 backdrop-blur-md rounded-full border border-white/10 px-4 py-2.5 focus-within:bg-black/60 focus-within:border-primary/50 transition-all w-[160px] md:w-[300px] group shadow-inner">
+                    <span className="material-symbols-rounded text-white/50 text-xl group-focus-within:text-primary transition-colors">search</span>
+                    <input ref={searchInputRef} type="text" placeholder="Buscar filmes..." className="bg-transparent border-none outline-none text-sm text-white placeholder-white/40 w-full p-0 focus:ring-0" />
                 </form>
 
                 <div className="flex items-center gap-3">
-                    <span className="text-xs font-bold text-white/50 uppercase tracking-wider hidden sm:block">{currentProfile.name}</span>
-                    <button onClick={() => setCurrentProfile(null)} className="w-9 h-9 rounded-full overflow-hidden border border-white/20 hover:border-primary transition-colors">
+                    <div className="hidden sm:flex flex-col items-end">
+                        <span className="text-xs font-bold text-white/90 uppercase tracking-wider">{currentProfile.name}</span>
+                    </div>
+                    <button onClick={() => setCurrentProfile(null)} className="w-10 h-10 rounded-full overflow-hidden border-2 border-white/20 hover:border-white transition-all hover:scale-105">
                         <img src={currentProfile.avatar} className="w-full h-full object-cover" />
                     </button>
                 </div>
@@ -280,10 +381,10 @@ const App: React.FC = () => {
       )}
 
       {/* CONTENT */}
-      {!playerState && renderContent()}
+      {!playerState && !showAds && renderContent()}
 
       {/* MOBILE NAV */}
-      {!playerState && (
+      {!playerState && !showAds && (
         <div className="fixed bottom-0 left-0 w-full glass-dark pb-safe pt-2 px-6 z-50 rounded-t-2xl lg:hidden">
             <div className="flex justify-between items-center pb-2">
                 <button onClick={handleGoHome} className={`flex flex-col items-center gap-1 group w-16 ${(hash === '#/' || !hash) ? 'text-primary' : 'text-white/50'}`}>
@@ -299,7 +400,7 @@ const App: React.FC = () => {
                     <span className="text-[10px] font-medium">Biblioteca</span>
                 </button>
                 <button onClick={() => setCurrentProfile(null)} className="text-white/50 flex flex-col items-center gap-1 group hover:text-white transition-colors w-16">
-                    <div className="size-6 rounded-full overflow-hidden border border-white/20 group-hover:border-primary transition-colors">
+                    <div className="size-6 rounded-full overflow-hidden border-2 border-white/20 transition-colors">
                         <img src={currentProfile.avatar} className="w-full h-full object-cover" alt="User" />
                     </div>
                     <span className="text-[10px] font-medium">Perfil</span>

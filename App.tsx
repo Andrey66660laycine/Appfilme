@@ -7,7 +7,7 @@ import TVDetails from './pages/TVDetails';
 import Welcome from './pages/Welcome';
 import Library from './pages/Library';
 import ProfileGateway from './pages/ProfileGateway';
-import CustomVideoPlayer from './components/CustomVideoPlayer';
+import SplashScreen from './components/SplashScreen'; // Novo componente
 import { tmdb } from './services/tmdbService';
 import { storageService } from './services/storageService';
 import { supabase } from './services/supabase';
@@ -22,7 +22,8 @@ interface PlayerState {
   tmdbId?: number; // Needed for history
   season?: number;
   episode?: number;
-  initialTime?: number; // Resume feature
+  title?: string; // Para exibir no loader
+  backdrop?: string; // Para o background do loader
 }
 
 interface NextEpisodeInfo {
@@ -36,12 +37,12 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<any>(null);
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
+  const [showSplash, setShowSplash] = useState(true);
   
   // Player States
   const [playerState, setPlayerState] = useState<PlayerState | null>(null);
-  const [nativeVideoUrl, setNativeVideoUrl] = useState<string | null>(null);
   const [showPlayerControls, setShowPlayerControls] = useState(true);
-  // isPlayerLoading removido logicamente da view do iframe para evitar travamento
+  const [isIframeLoaded, setIsIframeLoaded] = useState(false); // Estado para controlar o loader do iframe
   const [nextEpisode, setNextEpisode] = useState<NextEpisodeInfo | null>(null);
   
   // Ads States
@@ -66,14 +67,6 @@ const App: React.FC = () => {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
-
-  // --- GLOBAL VIDEO DETECTION LISTENER (Android Interop) ---
-  useEffect(() => {
-    window.onVideoDetected = (url: string) => {
-        console.log("Native Video Detected:", url);
-        setNativeVideoUrl(url);
-    };
   }, []);
 
   // --- ROUTING ---
@@ -255,12 +248,18 @@ const App: React.FC = () => {
 
   // --- PLAY LOGIC ---
   const startVideoPlayer = async (config: PlayerState) => {
-    setPlayerState(config);
+    // Reset loader state
+    setIsIframeLoaded(false);
+    
+    // Set initial configuration
+    let finalConfig = { ...config };
     setPendingPlayerState(null);
-    setNativeVideoUrl(null); // Reset native url on new play
 
     try {
-        if (!currentProfile) return;
+        if (!currentProfile) {
+            setPlayerState(finalConfig);
+            return;
+        }
         
         let details: any;
         if (config.type === 'movie') {
@@ -272,6 +271,10 @@ const App: React.FC = () => {
         }
 
         if (details) {
+            // Add metadata for the loader UI
+            finalConfig.title = config.type === 'movie' ? details.title : details.name;
+            finalConfig.backdrop = details.backdrop_path;
+
             await storageService.addToHistory(currentProfile.id, {
                 id: details.id,
                 type: config.type,
@@ -285,8 +288,10 @@ const App: React.FC = () => {
             });
         }
     } catch (e) {
-        console.error("Failed to save history", e);
+        console.error("Failed to save history or fetch details", e);
     }
+    
+    setPlayerState(finalConfig);
   };
 
   const handleNextEpisode = () => {
@@ -314,7 +319,7 @@ const App: React.FC = () => {
 
   const closePlayer = () => { 
       setPlayerState(null); 
-      setNativeVideoUrl(null);
+      setIsIframeLoaded(false);
   };
 
   const getPlayerUrl = () => {
@@ -325,12 +330,6 @@ const App: React.FC = () => {
       return `https://playerflixapi.com/serie/${playerState.id}/${playerState.season}/${playerState.episode}`;
     }
   };
-
-  const getPlayerTitle = () => {
-      if (!playerState) return 'Void Max';
-      if (playerState.type === 'tv') return `S${playerState.season}:E${playerState.episode}`;
-      return 'Filme';
-  }
 
   // --- RENDER CONTENT ---
   const renderContent = () => {
@@ -360,6 +359,10 @@ const App: React.FC = () => {
 
   if (loading) return null;
   if (!session) return <Welcome onStart={handleStartApp} />;
+  
+  // Show Splash Screen initially
+  if (showSplash) return <SplashScreen onFinish={() => setShowSplash(false)} />;
+  
   if (!currentProfile) return <ProfileGateway onProfileSelect={handleProfileSelect} onLogout={handleLogout} />;
 
   return (
@@ -391,39 +394,49 @@ const App: React.FC = () => {
           </div>
       )}
 
-      {/* CUSTOM NATIVE PLAYER (WHEN URL DETECTED) */}
-      {nativeVideoUrl && playerState && !showAds && (
-          <CustomVideoPlayer 
-              src={nativeVideoUrl} 
-              onClose={closePlayer} 
-              title={getPlayerTitle()}
-              profileId={currentProfile.id}
-              tmdbId={playerState.tmdbId}
-              type={playerState.type}
-              season={playerState.season}
-              episode={playerState.episode}
-              initialTime={playerState.initialTime}
-          />
-      )}
-
-      {/* FALLBACK IFRAME PLAYER (HIDDEN IF NATIVE DETECTED) */}
-      {playerState && !showAds && !nativeVideoUrl && (
+      {/* EMBED PLAYER WITH PREMIUM LOADER */}
+      {playerState && !showAds && (
         <div className="fixed inset-0 z-[100] bg-black animate-fade-in flex flex-col overflow-hidden">
+            
+            {/* PREMIUM LOADER OVERLAY */}
+            <div className={`absolute inset-0 z-20 flex flex-col items-center justify-center bg-black transition-opacity duration-700 ease-in-out ${isIframeLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+                {/* Backdrop Background */}
+                {playerState.backdrop && (
+                    <div 
+                        className="absolute inset-0 bg-cover bg-center opacity-40 scale-110 blur-xl animate-pulse-slow" 
+                        style={{backgroundImage: `url(${tmdb.getBackdropUrl(playerState.backdrop)})`}}
+                    ></div>
+                )}
+                
+                <div className="relative z-10 flex flex-col items-center text-center p-6">
+                    <div className="w-20 h-20 border-4 border-white/10 border-t-primary rounded-full animate-spin mb-8 shadow-[0_0_30px_rgba(242,13,242,0.4)]"></div>
+                    
+                    <h2 className="text-3xl md:text-5xl font-display font-bold text-white mb-2 tracking-tight drop-shadow-xl">
+                        {playerState.title || "Void Max"}
+                    </h2>
+                    {playerState.type === 'tv' && (
+                        <p className="text-white/70 text-lg font-medium mb-1">
+                           Temporada {playerState.season} • Episódio {playerState.episode}
+                        </p>
+                    )}
+                    <div className="flex items-center gap-2 mt-4">
+                        <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></span>
+                        <span className="text-xs uppercase tracking-[0.2em] text-primary font-bold">Estabelecendo Conexão Segura</span>
+                    </div>
+                </div>
+            </div>
             
             {/* EMBED CONTROLS */}
             <div className={`absolute inset-0 z-10 pointer-events-none transition-opacity duration-500 ${showPlayerControls ? 'opacity-100' : 'opacity-0'}`}>
                 <div className="absolute top-0 left-0 w-full p-6 bg-gradient-to-b from-black/90 to-transparent pointer-events-auto">
                      <div className="flex items-center gap-4">
-                         <button onClick={closePlayer} className="w-12 h-12 rounded-full bg-white/5 backdrop-blur-md flex items-center justify-center hover:bg-white/10 transition-all border border-white/5">
-                            <span className="material-symbols-rounded text-white text-3xl">arrow_back</span>
+                         <button onClick={closePlayer} className="w-12 h-12 rounded-full bg-white/5 backdrop-blur-md flex items-center justify-center hover:bg-white/10 transition-all border border-white/5 group">
+                            <span className="material-symbols-rounded text-white text-3xl group-hover:-translate-x-1 transition-transform">arrow_back</span>
                          </button>
                          <div>
-                            <h2 className="text-white font-bold text-lg drop-shadow-md">
+                            <h2 className="text-white font-bold text-lg drop-shadow-md line-clamp-1">
                                 {playerState.type === 'tv' ? `S${playerState.season}:E${playerState.episode}` : 'Reproduzindo'}
                             </h2>
-                            <span className="text-white/40 text-[10px] font-bold uppercase tracking-[0.2em]">
-                                VOID MAX
-                            </span>
                          </div>
                      </div>
                 </div>
@@ -445,13 +458,6 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex-1 w-full h-full relative bg-black">
-                 {/* 
-                    NOTE: The Android app detects the video URL from this iframe.
-                    When 'onVideoDetected' fires, 'nativeVideoUrl' becomes true,
-                    and this entire div is replaced by CustomVideoPlayer above.
-                    
-                    ADDED: referrerPolicy='no-referrer' to bypass hotlink protection.
-                 */}
                  <iframe 
                     src={getPlayerUrl()} 
                     width="100%" 
@@ -462,6 +468,10 @@ const App: React.FC = () => {
                     title="Player" 
                     allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
                     referrerPolicy="no-referrer"
+                    onLoad={() => {
+                        // Delay ligeiro para garantir que o visual carregou
+                        setTimeout(() => setIsIframeLoaded(true), 1000);
+                    }}
                  ></iframe>
             </div>
         </div>

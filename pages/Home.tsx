@@ -81,7 +81,7 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
   };
 
   const handleHistoryClick = async (item: WatchHistoryItem) => {
-    // CRITICAL FIX: Direct Play with Resume Logic
+    // Direct Play
     const isTv = item.type === 'tv';
     
     let playConfig: any = {
@@ -89,7 +89,7 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
         tmdbId: Number(item.id),
         season: item.season || 1,
         episode: item.episode || 1,
-        initialTime: item.progress || 0 // Resume feature
+        initialTime: 0 
     };
 
     if (isTv) {
@@ -292,9 +292,8 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
 
                 <div className="flex overflow-x-auto gap-4 pb-8 pr-4 hide-scrollbar snap-x cursor-grab active:cursor-grabbing">
                     {watchHistory.map((item, idx) => {
-                        const progressPercent = item.duration ? (item.progress || 0) / item.duration * 100 : 0;
                         return (
-                          <div key={`${item.id}-${item.timestamp}`} onClick={() => handleHistoryClick(item)} className="flex-none w-[260px] md:w-[320px] snap-start group relative cursor-pointer">
+                          <div key={`${item.id}-${item.timestamp}`} onClick={() => handleHistoryClick(item)} className="flex-none w-[200px] md:w-[260px] snap-start group relative cursor-pointer">
                               
                               {/* REMOVE BUTTON */}
                               <button 
@@ -306,22 +305,17 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
                               </button>
 
                               <div className="relative aspect-video rounded-xl overflow-hidden bg-gray-800 shadow-lg ring-1 ring-white/5 group-hover:ring-primary/50 transition-all duration-500">
-                                  <img src={tmdb.getBackdropUrl(item.backdrop_path)} alt={item.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
-                                  <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                      <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 scale-50 group-hover:scale-100 transition-all duration-300 border border-white/30">
+                                  <img src={tmdb.getBackdropUrl(item.backdrop_path)} alt={item.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-70 group-hover:opacity-100" />
+                                  <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors flex items-center justify-center">
+                                      <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center group-hover:scale-110 transition-all duration-300 border border-white/30">
                                           <span className="material-symbols-rounded text-white text-3xl ml-1">play_arrow</span>
                                       </div>
-                                  </div>
-                                  
-                                  {/* Progress Bar */}
-                                  <div className="absolute bottom-0 left-0 w-full h-1 bg-white/10">
-                                      <div className="h-full bg-gradient-to-r from-primary to-purple-500 shadow-[0_0_10px_#f20df2]" style={{ width: `${progressPercent}%` }}></div>
                                   </div>
                               </div>
                               <div className="mt-3">
                                   <h3 className="text-white text-sm font-bold truncate group-hover:text-primary transition-colors">{item.title}</h3>
-                                  <p className="text-white/40 text-xs mt-0.5">
-                                    {item.type === 'tv' && item.season ? `T${item.season}:E${item.episode}` : 'Filme'} • {Math.floor(progressPercent)}%
+                                  <p className="text-white/40 text-xs mt-0.5 uppercase tracking-wide font-medium">
+                                    {item.type === 'tv' && item.season ? `Temporada ${item.season} • Ep ${item.episode}` : 'Filme'}
                                   </p>
                               </div>
                           </div>

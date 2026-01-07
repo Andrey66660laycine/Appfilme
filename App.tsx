@@ -241,31 +241,35 @@ const App: React.FC = () => {
           
           // Create wrapper
           const adDiv = document.createElement('div');
-          adDiv.style.overflow = "hidden";
-          adDiv.style.display = "flex";
-          adDiv.style.justifyContent = "center";
-          adDiv.style.alignItems = "center";
           adContainerRef.current.appendChild(adDiv);
 
-          // Script 1: Config
-          const configScript = document.createElement('script');
-          configScript.type = 'text/javascript';
-          configScript.text = `
-              atOptions = {
-                  'key' : 'fb9f4466d526cca0ef371ffed97324dd',
-                  'format' : 'iframe',
-                  'height' : 90,
-                  'width' : 728,
-                  'params' : {}
+          // Inject Qualiclicks Script
+          const script = document.createElement('script');
+          script.type = 'text/javascript';
+          script.innerHTML = `
+            (function(i,n,p,a,g,e){
+              i.inpagepush = i.inpagepush || function() {
+                (i.inpagepush.q=(i.inpagepush.q||[])).push(arguments)
               };
+              var s=n.getElementsByTagName('head')[0];
+              var q=n.createElement('script'); q.async=1;
+              q.src='//static.qualiclicks.com/inpage/inpage.js';
+              s.appendChild(q);
+              i.inpagepush('init', {
+                host: 'xml.qualiclicks.com',
+                feed: 1014621,
+                auth : '8UkP',
+                subid: '',
+                refresh: 120,
+                position: 'top',
+                slots: 2,
+                query : '',
+                nodesrc : true
+              });
+              i.inpagepush('show');
+            })(window, document);
           `;
-          adDiv.appendChild(configScript);
-
-          // Script 2: Invoke
-          const invokeScript = document.createElement('script');
-          invokeScript.type = 'text/javascript';
-          invokeScript.src = "https://www.highperformanceformat.com/fb9f4466d526cca0ef371ffed97324dd/invoke.js";
-          adDiv.appendChild(invokeScript);
+          adDiv.appendChild(script);
 
           return () => {
               clearInterval(timerInterval);

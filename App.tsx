@@ -45,6 +45,10 @@ const App: React.FC = () => {
   const [isIframeLoaded, setIsIframeLoaded] = useState(false); // Estado para controlar o loader do iframe
   const [nextEpisode, setNextEpisode] = useState<NextEpisodeInfo | null>(null);
   
+  // Server Warning Modal State
+  const [showServerNotice, setShowServerNotice] = useState(false);
+  const [dontShowNoticeAgain, setDontShowNoticeAgain] = useState(false);
+
   // Ads States
   const [pendingPlayerState, setPendingPlayerState] = useState<PlayerState | null>(null);
   const [showAds, setShowAds] = useState(false);
@@ -76,6 +80,23 @@ const App: React.FC = () => {
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
+
+  // --- BROWSER BACK BUTTON HANDLING FOR PLAYER ---
+  useEffect(() => {
+    if (playerState) {
+      // Quando o player abre, empurramos um estado no histórico
+      window.history.pushState({ playerOpen: true }, "");
+      
+      const handlePopState = (event: PopStateEvent) => {
+        // Se o usuário clicar em voltar, fechamos o player
+        setPlayerState(null);
+        setIsIframeLoaded(false);
+      };
+
+      window.addEventListener('popstate', handlePopState);
+      return () => window.removeEventListener('popstate', handlePopState);
+    }
+  }, [playerState]);
 
   // --- HIDDEN CHRONOMETER (TRACK TIME) ---
   useEffect(() => {
@@ -316,7 +337,22 @@ const App: React.FC = () => {
   const handlePlayRequest = (config: PlayerState) => {
       if (!currentProfile) return;
       setPendingPlayerState(config);
-      setShowAds(true);
+
+      // Check if user skipped the notice
+      const skipNotice = localStorage.getItem('void_skip_server_notice');
+      if (skipNotice === 'true') {
+          setShowAds(true);
+      } else {
+          setShowServerNotice(true);
+      }
+  };
+
+  const handleConfirmNotice = () => {
+      if (dontShowNoticeAgain) {
+          localStorage.setItem('void_skip_server_notice', 'true');
+      }
+      setShowServerNotice(false);
+      setShowAds(true); // Proceed to Ads then Player
   };
 
   const closeAdsAndPlay = () => {
@@ -327,9 +363,14 @@ const App: React.FC = () => {
   };
 
   const closePlayer = () => { 
+      // This is now mostly handled by Browser Back, but kept for cleanup
       setPlayerState(null); 
       setIsIframeLoaded(false);
       if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
+      // Clean up history state if closed manually
+      if (window.history.state?.playerOpen) {
+          window.history.back();
+      }
   };
 
   const getPlayerUrl = () => {
@@ -378,8 +419,43 @@ const App: React.FC = () => {
   return (
     <ProfileContext.Provider value={currentProfile}>
       
+      {/* SERVER NOTICE MODAL */}
+      {showServerNotice && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+              <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl max-w-sm w-full p-6 shadow-2xl relative overflow-hidden animate-slide-up">
+                  {/* Glow */}
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-primary/20 rounded-full blur-[50px] pointer-events-none"></div>
+                  
+                  <div className="relative z-10 text-center">
+                      <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4 border border-white/10 shadow-[0_0_20px_rgba(242,13,242,0.15)]">
+                          <span className="material-symbols-rounded text-primary text-3xl">dns</span>
+                      </div>
+                      
+                      <h2 className="text-xl font-display font-bold text-white mb-2">Dica de Reprodução</h2>
+                      <p className="text-white/70 text-sm leading-relaxed mb-6">
+                          Se o vídeo não carregar ou travar, procure pela opção <b className="text-white">"Trocar Servidor"</b> ou ícone de nuvem dentro do player.
+                      </p>
+                      
+                      <button 
+                          onClick={handleConfirmNotice}
+                          className="w-full bg-white text-black font-bold py-3.5 rounded-xl hover:bg-gray-200 transition-all active:scale-95 shadow-lg mb-4"
+                      >
+                          Entendi, Vamos Assistir
+                      </button>
+                      
+                      <div className="flex items-center justify-center gap-2 cursor-pointer group" onClick={() => setDontShowNoticeAgain(!dontShowNoticeAgain)}>
+                          <div className={`w-5 h-5 rounded border border-white/30 flex items-center justify-center transition-colors ${dontShowNoticeAgain ? 'bg-primary border-primary' : 'bg-transparent'}`}>
+                              {dontShowNoticeAgain && <span className="material-symbols-rounded text-white text-sm">check</span>}
+                          </div>
+                          <span className="text-xs text-white/50 group-hover:text-white/80 transition-colors">Não mostrar novamente</span>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* ADS OVERLAY */}
-      {showAds && (
+      {showAds && !showServerNotice && (
           <div className="fixed inset-0 z-[150] bg-black flex flex-col items-center justify-center p-4 animate-fade-in">
               <div className="absolute top-6 right-6 z-50">
                   <button 
@@ -405,7 +481,7 @@ const App: React.FC = () => {
       )}
 
       {/* EMBED PLAYER WITH PREMIUM LOADER */}
-      {playerState && !showAds && (
+      {playerState && !showAds && !showServerNotice && (
         <div className="fixed inset-0 z-[100] bg-black animate-fade-in flex flex-col overflow-hidden">
             
             {/* PREMIUM LOADER OVERLAY */}
@@ -429,28 +505,21 @@ const App: React.FC = () => {
                            Temporada {playerState.season} • Episódio {playerState.episode}
                         </p>
                     )}
-                    <div className="flex items-center gap-2 mt-4">
-                        <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></span>
-                        <span className="text-xs uppercase tracking-[0.2em] text-primary font-bold">Estabelecendo Conexão Segura</span>
+                    <div className="flex flex-col items-center gap-2 mt-4">
+                        <div className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></span>
+                            <span className="text-xs uppercase tracking-[0.2em] text-primary font-bold">Conectando</span>
+                        </div>
+                        <p className="text-white/30 text-[10px] uppercase tracking-widest mt-2 animate-pulse">
+                            Dica: Se não carregar, troque de servidor no player
+                        </p>
                     </div>
                 </div>
             </div>
             
-            {/* EMBED CONTROLS */}
+            {/* EMBED CONTROLS (Back Button REMOVED as requested) */}
             <div className={`absolute inset-0 z-10 pointer-events-none transition-opacity duration-500 ${showPlayerControls ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="absolute top-0 left-0 w-full p-6 bg-gradient-to-b from-black/90 to-transparent pointer-events-auto">
-                     <div className="flex items-center gap-4">
-                         <button onClick={closePlayer} className="w-12 h-12 rounded-full bg-white/5 backdrop-blur-md flex items-center justify-center hover:bg-white/10 transition-all border border-white/5 group">
-                            <span className="material-symbols-rounded text-white text-3xl group-hover:-translate-x-1 transition-transform">arrow_back</span>
-                         </button>
-                         <div>
-                            <h2 className="text-white font-bold text-lg drop-shadow-md line-clamp-1">
-                                {playerState.type === 'tv' ? `S${playerState.season}:E${playerState.episode}` : 'Reproduzindo'}
-                            </h2>
-                         </div>
-                     </div>
-                </div>
-
+                {/* Next Episode Button */}
                 {nextEpisode && (
                     <div className="absolute bottom-24 right-8 pointer-events-auto animate-slide-up">
                         <button 
@@ -484,7 +553,7 @@ const App: React.FC = () => {
       )}
 
       {/* NAVBAR */}
-      {!isSearchActive && !isLibraryActive && !playerState && !showAds && (
+      {!isSearchActive && !isLibraryActive && !playerState && !showAds && !showServerNotice && (
         <nav id="navbar" className="fixed top-0 left-0 w-full z-40 transition-all duration-300 px-4 py-4 lg:px-8">
             <div className="max-w-7xl mx-auto flex items-center justify-between">
                 <div className="flex items-center gap-2 cursor-pointer group" onClick={handleGoHome}>
@@ -509,10 +578,10 @@ const App: React.FC = () => {
       )}
 
       {/* CONTENT */}
-      {!playerState && !showAds && renderContent()}
+      {!playerState && !showAds && !showServerNotice && renderContent()}
 
       {/* MOBILE NAV */}
-      {!playerState && !showAds && (
+      {!playerState && !showAds && !showServerNotice && (
         <div className="fixed bottom-0 left-0 w-full bg-black/90 backdrop-blur-xl border-t border-white/5 pb-safe pt-2 px-6 z-50 rounded-t-2xl lg:hidden">
             <div className="flex justify-between items-center pb-2">
                 <button onClick={handleGoHome} className={`flex flex-col items-center gap-1 group w-16 ${(hash === '#/' || !hash) ? 'text-white' : 'text-white/30'}`}>

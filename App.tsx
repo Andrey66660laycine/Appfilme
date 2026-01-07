@@ -41,7 +41,7 @@ const App: React.FC = () => {
   const [playerState, setPlayerState] = useState<PlayerState | null>(null);
   const [nativeVideoUrl, setNativeVideoUrl] = useState<string | null>(null);
   const [showPlayerControls, setShowPlayerControls] = useState(true);
-  const [isPlayerLoading, setIsPlayerLoading] = useState(false);
+  // isPlayerLoading removido logicamente da view do iframe para evitar travamento
   const [nextEpisode, setNextEpisode] = useState<NextEpisodeInfo | null>(null);
   
   // Ads States
@@ -73,7 +73,6 @@ const App: React.FC = () => {
     window.onVideoDetected = (url: string) => {
         console.log("Native Video Detected:", url);
         setNativeVideoUrl(url);
-        setIsPlayerLoading(false); // Stop loading spinner if embed was loading
     };
   }, []);
 
@@ -256,7 +255,6 @@ const App: React.FC = () => {
 
   // --- PLAY LOGIC ---
   const startVideoPlayer = async (config: PlayerState) => {
-    setIsPlayerLoading(true);
     setPlayerState(config);
     setPendingPlayerState(null);
     setNativeVideoUrl(null); // Reset native url on new play
@@ -274,7 +272,6 @@ const App: React.FC = () => {
         }
 
         if (details) {
-            // addToHistory now handles the duplication check internally (stats fix)
             await storageService.addToHistory(currentProfile.id, {
                 id: details.id,
                 type: config.type,
@@ -290,14 +287,10 @@ const App: React.FC = () => {
     } catch (e) {
         console.error("Failed to save history", e);
     }
-    
-    // Fallback if native url doesn't arrive quickly, we keep loading until iframe or detection
-    // But typically iframe loads immediately.
   };
 
   const handleNextEpisode = () => {
       if (playerState && nextEpisode) {
-          setIsPlayerLoading(true);
           startVideoPlayer({
               ...playerState,
               season: nextEpisode.season,
@@ -416,14 +409,8 @@ const App: React.FC = () => {
       {/* FALLBACK IFRAME PLAYER (HIDDEN IF NATIVE DETECTED) */}
       {playerState && !showAds && !nativeVideoUrl && (
         <div className="fixed inset-0 z-[100] bg-black animate-fade-in flex flex-col overflow-hidden">
-            {isPlayerLoading && (
-                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm">
-                    <div className="w-16 h-16 border-4 border-white/10 border-t-white rounded-full animate-spin mb-6"></div>
-                    <p className="text-white/50 animate-pulse">Carregando Stream...</p>
-                </div>
-            )}
             
-            {/* EMBED CONTROLS (Only visible before native detection if needed, or if detection fails) */}
+            {/* EMBED CONTROLS */}
             <div className={`absolute inset-0 z-10 pointer-events-none transition-opacity duration-500 ${showPlayerControls ? 'opacity-100' : 'opacity-0'}`}>
                 <div className="absolute top-0 left-0 w-full p-6 bg-gradient-to-b from-black/90 to-transparent pointer-events-auto">
                      <div className="flex items-center gap-4">
@@ -462,6 +449,8 @@ const App: React.FC = () => {
                     NOTE: The Android app detects the video URL from this iframe.
                     When 'onVideoDetected' fires, 'nativeVideoUrl' becomes true,
                     and this entire div is replaced by CustomVideoPlayer above.
+                    
+                    ADDED: referrerPolicy='no-referrer' to bypass hotlink protection.
                  */}
                  <iframe 
                     src={getPlayerUrl()} 
@@ -472,6 +461,7 @@ const App: React.FC = () => {
                     className="w-full h-full object-cover" 
                     title="Player" 
                     allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                    referrerPolicy="no-referrer"
                  ></iframe>
             </div>
         </div>

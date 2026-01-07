@@ -101,11 +101,11 @@ const App: React.FC = () => {
   // --- HIDDEN CHRONOMETER (TRACK TIME) ---
   useEffect(() => {
       let interval: number;
-      // FIX: Agora atualiza as estatísticas APENAS quando o player está ATIVO (assistindo)
+      // FIX: Atualiza a cada 10 segundos para feedback mais rápido no perfil
       if (currentProfile && playerState) { 
           interval = window.setInterval(() => {
-              storageService.updateWatchStats(currentProfile.id, 60);
-          }, 60000);
+              storageService.updateWatchStats(currentProfile.id, 10);
+          }, 10000);
       }
       return () => {
           if (interval) clearInterval(interval);
@@ -279,34 +279,43 @@ const App: React.FC = () => {
     let finalConfig = { ...config };
     setPendingPlayerState(null);
 
-    // FIX: Force loader to stay for exactly 5 seconds. Fodase se carregou ou não.
+    // FIX: Force loader to stay for exactly 5 seconds.
     if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
     loaderTimeoutRef.current = window.setTimeout(() => {
         setIsIframeLoaded(true); // Hide loader after 5s
     }, 5000);
 
+    // Inicializa o player imediatamente para feedback visual
+    setPlayerState(finalConfig);
+
     try {
-        if (!currentProfile) {
-            setPlayerState(finalConfig);
-            return;
-        }
+        if (!currentProfile) return;
         
-        let details: any;
-        if (config.type === 'movie') {
-             if (config.tmdbId) {
-                details = await tmdb.getMovieDetails(String(config.tmdbId));
-             }
-        } else {
-             details = await tmdb.getTVDetails(config.id);
+        let details: any = null;
+        
+        // Tentativa de buscar detalhes completos
+        try {
+            if (config.type === 'movie') {
+                 if (config.tmdbId) {
+                    details = await tmdb.getMovieDetails(String(config.tmdbId));
+                 }
+            } else {
+                 details = await tmdb.getTVDetails(config.id);
+            }
+        } catch (err) {
+            console.warn("Failed to fetch details for history, using config fallback", err);
         }
 
+        // Se conseguiu detalhes, atualiza o título no player e salva histórico completo
         if (details) {
-            // Add metadata for the loader UI
-            finalConfig.title = config.type === 'movie' ? details.title : details.name;
-            finalConfig.backdrop = details.backdrop_path;
+            setPlayerState(prev => prev ? ({
+                ...prev,
+                title: config.type === 'movie' ? details.title : details.name,
+                backdrop: details.backdrop_path
+            }) : null);
 
             await storageService.addToHistory(currentProfile.id, {
-                id: details.id,
+                id: details.id, // TMDB ID
                 type: config.type,
                 title: config.type === 'movie' ? details.title : details.name,
                 poster_path: details.poster_path,
@@ -316,12 +325,23 @@ const App: React.FC = () => {
                 season: config.season,
                 episode: config.episode
             });
+        } else if (config.tmdbId) {
+            // FALLBACK CRÍTICO: Se a API falhar, salva com o que temos para garantir o "Continuar Assistindo"
+             await storageService.addToHistory(currentProfile.id, {
+                id: config.tmdbId,
+                type: config.type,
+                title: config.title || "Título Indisponível",
+                poster_path: "", // Vai ficar sem imagem até a próxima atualização
+                backdrop_path: "",
+                vote_average: 0,
+                timestamp: Date.now(),
+                season: config.season,
+                episode: config.episode
+            });
         }
     } catch (e) {
-        console.error("Failed to save history or fetch details", e);
+        console.error("Critical error in player start flow", e);
     }
-    
-    setPlayerState(finalConfig);
   };
 
   const handleNextEpisode = () => {

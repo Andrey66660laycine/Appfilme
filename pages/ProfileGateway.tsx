@@ -46,11 +46,17 @@ const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogo
 
   useEffect(() => {
     loadProfiles();
-  }, []);
+  }, [view]); // Reload profiles whenever view changes to update stats
 
   const loadProfiles = async () => {
     const data = await storageService.getProfiles();
     setProfiles(data);
+    
+    // Update dashboard profile if it exists to get fresh stats
+    if (dashboardProfile) {
+        const updated = data.find(p => p.id === dashboardProfile.id);
+        if (updated) setDashboardProfile(updated);
+    }
   };
 
   const handleCreateOrUpdate = async () => {
@@ -116,7 +122,17 @@ const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogo
 
   const formatTime = (seconds: number) => {
       const hours = Math.floor(seconds / 3600);
-      return hours;
+      const minutes = Math.floor(seconds / 60);
+      
+      if (hours < 1) {
+          return `${minutes}`;
+      }
+      return `${hours}`;
+  }
+  
+  const getTimeLabel = (seconds: number) => {
+      const hours = Math.floor(seconds / 3600);
+      return hours < 1 ? "Minutos" : "Horas";
   }
 
   return (
@@ -342,7 +358,7 @@ const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogo
                    <div className="grid grid-cols-3 gap-4">
                         <div className="bg-white/5 backdrop-blur-md p-4 rounded-2xl flex flex-col items-center text-center border border-white/5">
                             <span className="text-2xl font-display font-bold text-white mb-1">{formatTime(dashboardProfile.total_watch_time)}</span>
-                            <span className="text-[10px] uppercase tracking-wider text-white/40 font-bold">Horas</span>
+                            <span className="text-[10px] uppercase tracking-wider text-white/40 font-bold">{getTimeLabel(dashboardProfile.total_watch_time)}</span>
                         </div>
                         <div className="bg-white/5 backdrop-blur-md p-4 rounded-2xl flex flex-col items-center text-center border border-white/5">
                             <span className="text-2xl font-display font-bold text-white mb-1">{dashboardProfile.total_movies_watched}</span>

@@ -9,129 +9,147 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
   const [exiting, setExiting] = useState(false);
 
   useEffect(() => {
-    // Tempo total da splash screen
+    // Tempo total da splash screen (Sincronizado com o CSS)
+    // 0s: Início
+    // 3.5s: Fim da animação de entrada/brilho
+    // 4.0s: Saída
     const timer = setTimeout(() => {
       setExiting(true);
-      setTimeout(onFinish, 1200); // Tempo da animação de saída (sucção)
-    }, 3800);
+      setTimeout(onFinish, 800); // Tempo da transição de saída
+    }, 4200);
 
     return () => clearTimeout(timer);
   }, [onFinish]);
 
   return (
-    <div className={`fixed inset-0 z-[9999] bg-black flex flex-col items-center justify-center overflow-hidden transition-all duration-[1200ms] cubic-bezier(0.7, 0, 0.3, 1) ${exiting ? 'opacity-0 scale-[3] blur-xl' : 'opacity-100 scale-100'}`}>
+    <div className={`fixed inset-0 z-[9999] bg-[#050505] flex flex-col items-center justify-center overflow-hidden transition-all duration-1000 cubic-bezier(0.7, 0, 0.3, 1) ${exiting ? 'opacity-0 scale-110 blur-xl pointer-events-none' : 'opacity-100 scale-100'}`}>
       
-      {/* --- COSMIC BACKGROUND --- */}
+      {/* BACKGROUND ATMOSPHERE */}
+      <div className="absolute inset-0 bg-radial-gradient from-[#1a0b2e] to-[#000000] opacity-60"></div>
       
-      {/* 1. Deep Space Base */}
-      <div className="absolute inset-0 bg-[#020202]"></div>
-      
-      {/* 2. Starfield / Particles */}
-      <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute w-[2px] h-[2px] bg-white rounded-full top-1/4 left-1/4 animate-float-particle opacity-40" style={{animationDelay: '0s'}}></div>
-          <div className="absolute w-[3px] h-[3px] bg-white rounded-full top-3/4 left-1/3 animate-float-particle opacity-20" style={{animationDelay: '1s'}}></div>
-          <div className="absolute w-[1px] h-[1px] bg-white rounded-full top-1/2 left-2/3 animate-float-particle opacity-50" style={{animationDelay: '2s'}}></div>
-          <div className="absolute w-[2px] h-[2px] bg-primary rounded-full top-1/3 right-1/4 animate-float-particle opacity-30" style={{animationDelay: '1.5s'}}></div>
-          <div className="absolute w-[1px] h-[1px] bg-white rounded-full bottom-1/4 right-1/3 animate-float-particle opacity-40" style={{animationDelay: '3s'}}></div>
-      </div>
+      {/* GRID PATTERN (Subtle Tech feel) */}
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_60%_60%_at_50%_50%,black,transparent)]"></div>
 
-      {/* 3. Nebula Glows */}
-      <div className="absolute top-[-50%] left-[-20%] w-[100vw] h-[100vw] bg-purple-900/10 rounded-full blur-[150px] animate-pulse-slow"></div>
-      <div className="absolute bottom-[-50%] right-[-20%] w-[100vw] h-[100vw] bg-blue-900/10 rounded-full blur-[150px] animate-pulse-slow" style={{animationDelay: '2s'}}></div>
-
-
-      {/* --- THE EVENT HORIZON (CENTER) --- */}
-      <div className="relative z-10 flex flex-col items-center justify-center">
+      {/* --- LOGO CONTAINER --- */}
+      <div className="relative z-10 flex flex-col items-center">
         
-        {/* The Eclipse */}
-        <div className="relative w-48 h-48 mb-12 flex items-center justify-center">
-            
-            {/* Corona Glow (Back) */}
-            <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-primary via-purple-500 to-blue-600 blur-[40px] opacity-40 animate-pulse-fast"></div>
-            
-            {/* The Ring */}
-            <div className="absolute inset-0 rounded-full border-[1px] border-white/20 shadow-[0_0_50px_rgba(255,255,255,0.1)] animate-spin-slow"></div>
-            <div className="absolute inset-2 rounded-full border-[1px] border-white/10 border-t-primary/50 animate-spin-reverse"></div>
+        {/* SVG LOGO */}
+        <div className="relative w-64 h-48 md:w-80 md:h-60 mb-8">
+            <svg viewBox="0 0 200 150" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full drop-shadow-[0_0_15px_rgba(0,200,255,0.3)]">
+                <defs>
+                    {/* NEON GRADIENT: Roxo (Primary) para Azul Ciano (Novo estilo da imagem) */}
+                    <linearGradient id="neonGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#7c3aed" /> {/* Deep Purple */}
+                        <stop offset="40%" stopColor="#f20df2" /> {/* Primary Pink */}
+                        <stop offset="100%" stopColor="#00d4ff" /> {/* Cyan Blue */}
+                    </linearGradient>
+                    
+                    {/* GLOW FILTER */}
+                    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+                        <feMerge>
+                            <feMergeNode in="coloredBlur"/>
+                            <feMergeNode in="SourceGraphic"/>
+                        </feMerge>
+                    </filter>
+                </defs>
 
-            {/* The Void (Black Hole Center) */}
-            <div className="relative z-10 w-36 h-36 bg-black rounded-full shadow-[inset_0_0_60px_rgba(0,0,0,1)] flex items-center justify-center overflow-hidden">
-                {/* Reflection effect inside the void */}
-                <div className="absolute top-[-50%] left-[-50%] w-[200%] h-[200%] bg-gradient-to-br from-transparent via-white/5 to-transparent rotate-45 animate-shimmer-fast"></div>
-                
-                <span className="material-symbols-rounded text-5xl text-white opacity-90 drop-shadow-[0_0_15px_rgba(255,255,255,0.8)] scale-100 animate-breathing-icon">
-                    play_arrow
-                </span>
-            </div>
+                {/* THE "VM" WAVE PATH */}
+                {/* Caminho desenhado para imitar o V conectado ao M fluido da imagem */}
+                <path 
+                    d="M 20 20 L 55 110 L 95 30 Q 120 0 145 30 L 145 110" 
+                    stroke="url(#neonGradient)" 
+                    strokeWidth="12" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round"
+                    fill="none"
+                    className="logo-path"
+                    style={{filter: 'url(#glow)'}}
+                />
+
+                {/* THE PLAY TRIANGLE (Inside the M arch) */}
+                <path 
+                    d="M 105 60 L 135 80 L 105 100 Z" 
+                    fill="#00d4ff" 
+                    className="play-icon"
+                    style={{filter: 'url(#glow)'}}
+                />
+            </svg>
         </div>
 
-        {/* TYPOGRAPHY */}
-        <div className="text-center relative z-20">
-            {/* Main Title with Shimmer */}
-            <h1 className="font-display font-black text-7xl md:text-8xl tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-gray-500 via-white to-gray-500 bg-[length:200%_auto] animate-text-shimmer leading-none drop-shadow-2xl">
-                VOID
+        {/* TEXT LOGO */}
+        <div className="text-center relative">
+            <h1 className="font-display font-black text-5xl md:text-6xl tracking-[0.2em] text-white overflow-hidden leading-tight mix-blend-screen">
+                <span className="inline-block animate-slide-up-char" style={{animationDelay: '1.8s'}}>V</span>
+                <span className="inline-block animate-slide-up-char" style={{animationDelay: '1.9s'}}>O</span>
+                <span className="inline-block animate-slide-up-char" style={{animationDelay: '2.0s'}}>I</span>
+                <span className="inline-block animate-slide-up-char" style={{animationDelay: '2.1s'}}>D</span>
+                <span className="inline-block w-4"></span>
+                <span className="inline-block animate-slide-up-char" style={{animationDelay: '2.2s'}}>M</span>
+                <span className="inline-block animate-slide-up-char" style={{animationDelay: '2.3s'}}>A</span>
+                <span className="inline-block animate-slide-up-char" style={{animationDelay: '2.4s'}}>X</span>
             </h1>
             
-            {/* Subtitle with separator */}
-            <div className="flex items-center justify-center gap-4 mt-6 opacity-0 animate-fade-in-up" style={{animationDelay: '0.5s'}}>
-                <div className="h-[1px] w-12 bg-gradient-to-r from-transparent via-primary to-transparent"></div>
-                <span className="text-xs md:text-sm font-display font-bold text-white tracking-[0.8em] uppercase text-shadow-glow">
-                    MAX
-                </span>
-                <div className="h-[1px] w-12 bg-gradient-to-r from-transparent via-primary to-transparent"></div>
-            </div>
+            {/* REFLECTION / SHINE BAR */}
+            <div className="w-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent mx-auto mt-4 animate-expand-line shadow-[0_0_10px_#00d4ff]"></div>
         </div>
-
-      </div>
-      
-      {/* LOADING BAR (Minimalist) */}
-      <div className="absolute bottom-0 left-0 w-full h-[2px] bg-white/5">
-        <div className="h-full bg-gradient-to-r from-primary via-purple-400 to-primary w-full animate-progress-finish origin-left"></div>
       </div>
 
-      {/* CUSTOM ANIMATIONS */}
+      {/* CSS ANIMATIONS */}
       <style>{`
-        .animate-spin-slow { animation: spin 20s linear infinite; }
-        .animate-spin-reverse { animation: spin 12s linear infinite reverse; }
-        .text-shadow-glow { text-shadow: 0 0 15px rgba(242, 13, 242, 0.8); }
-        
-        @keyframes floatParticle {
-            0%, 100% { transform: translateY(0) translateX(0); opacity: 0.2; }
-            50% { transform: translateY(-20px) translateX(10px); opacity: 0.6; }
-        }
-        .animate-float-particle {
-            animation: floatParticle 8s ease-in-out infinite;
+        .bg-radial-gradient {
+            background: radial-gradient(circle at center, #1a0b2e 0%, #000000 100%);
         }
 
-        @keyframes textShimmer {
-            0% { background-position: 200% center; }
-            100% { background-position: -200% center; }
-        }
-        .animate-text-shimmer {
-            animation: textShimmer 6s linear infinite;
-        }
-
-        @keyframes shimmerFast {
-            0% { transform: translateX(-100%) rotate(45deg); }
-            100% { transform: translateX(100%) rotate(45deg); }
-        }
-        .animate-shimmer-fast {
-            animation: shimmerFast 3s infinite;
+        /* --- LOGO DRAWING ANIMATION --- */
+        .logo-path {
+            stroke-dasharray: 400; /* Comprimento aproximado da linha */
+            stroke-dashoffset: 400;
+            animation: drawLine 2.5s cubic-bezier(0.5, 0, 0.2, 1) forwards, neonPulse 3s infinite alternate 2.5s;
         }
 
-        @keyframes breathingIcon {
-            0%, 100% { transform: scale(1); opacity: 0.8; text-shadow: 0 0 10px rgba(255,255,255,0.5); }
-            50% { transform: scale(1.1); opacity: 1; text-shadow: 0 0 25px rgba(255,255,255,0.9); }
-        }
-        .animate-breathing-icon {
-            animation: breathingIcon 4s ease-in-out infinite;
+        @keyframes drawLine {
+            0% { stroke-dashoffset: 400; opacity: 0; }
+            10% { opacity: 1; }
+            100% { stroke-dashoffset: 0; opacity: 1; }
         }
 
-        @keyframes progressFinish {
-            0% { transform: scaleX(0); }
-            100% { transform: scaleX(1); }
+        @keyframes neonPulse {
+            0% { filter: drop-shadow(0 0 2px rgba(242, 13, 242, 0.5)); stroke-width: 12; }
+            100% { filter: drop-shadow(0 0 15px rgba(0, 212, 255, 0.8)); stroke-width: 13; }
         }
-        .animate-progress-finish {
-            animation: progressFinish 3.5s cubic-bezier(0.2, 1, 0.3, 1) forwards;
+
+        /* --- PLAY ICON POP --- */
+        .play-icon {
+            opacity: 0;
+            transform-origin: center;
+            transform: scale(0);
+            animation: popIcon 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards 1.5s;
+        }
+
+        @keyframes popIcon {
+            0% { opacity: 0; transform: scale(0) rotate(-45deg); }
+            100% { opacity: 1; transform: scale(1) rotate(0deg); }
+        }
+
+        /* --- TEXT ANIMATIONS --- */
+        .animate-slide-up-char {
+            opacity: 0;
+            transform: translateY(40px);
+            animation: slideUpChar 0.6s cubic-bezier(0.2, 1, 0.3, 1) forwards;
+        }
+
+        @keyframes slideUpChar {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .animate-expand-line {
+            animation: expandLine 1s cubic-bezier(0.2, 1, 0.3, 1) forwards 2.5s;
+        }
+
+        @keyframes expandLine {
+            0% { w: 0; opacity: 0; }
+            100% { width: 100px; opacity: 0.8; }
         }
       `}</style>
     </div>

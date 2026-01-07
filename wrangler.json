@@ -1,7 +1,2 @@
-{
-  "name": "streamverse-premium",
-  "compatibility_date": "2026-01-07",
-  "assets": {
-    "directory": "./dist"
-  }
-}
+// wrangler.json
+"name": "voidmaxx",

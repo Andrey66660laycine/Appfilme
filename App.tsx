@@ -279,11 +279,11 @@ const App: React.FC = () => {
     let finalConfig = { ...config };
     setPendingPlayerState(null);
 
-    // FIX: Force loader to stay for exactly 5 seconds.
+    // FIX: Force loader to stay for exactly 7 seconds (Increased from 5s)
     if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
     loaderTimeoutRef.current = window.setTimeout(() => {
-        setIsIframeLoaded(true); // Hide loader after 5s
-    }, 5000);
+        setIsIframeLoaded(true); // Hide loader after 7s
+    }, 7000);
 
     // Inicializa o player imediatamente para feedback visual
     setPlayerState(finalConfig);

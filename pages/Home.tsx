@@ -43,11 +43,9 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
 
         setTrending(results);
         
-        // Fetch history (Profile Scoped) - Only on mount actually, but safe here
-        if (activeTab === 'all') {
-            const history = await storageService.getHistory(currentProfile.id);
-            setWatchHistory(history);
-        }
+        // Fetch history (Profile Scoped)
+        const history = await storageService.getHistory(currentProfile.id);
+        setWatchHistory(history);
         
         // Check if featured is in list
         if (results.length > 0) {
@@ -82,8 +80,45 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
     onMovieClick(item.id, item.media_type === 'tv' || activeTab === 'tv' || activeTab === 'originals' ? 'tv' : 'movie');
   };
 
-  const handleHistoryClick = (item: WatchHistoryItem) => {
-    onMovieClick(item.id, item.type);
+  const handleHistoryClick = async (item: WatchHistoryItem) => {
+    // CRITICAL FIX: Direct Play with Resume Logic
+    const isTv = item.type === 'tv';
+    
+    let playConfig: any = {
+        type: item.type,
+        tmdbId: Number(item.id),
+        season: item.season || 1,
+        episode: item.episode || 1,
+        initialTime: item.progress || 0 // Resume feature
+    };
+
+    if (isTv) {
+        playConfig.id = String(item.id);
+        onPlayVideo(playConfig);
+    } else {
+        try {
+            const details = await tmdb.getMovieDetails(String(item.id));
+            if (details && details.imdb_id) {
+                playConfig.id = details.imdb_id;
+                onPlayVideo(playConfig);
+            } else {
+                playConfig.id = String(item.id);
+                onPlayVideo(playConfig);
+            }
+        } catch (e) {
+            playConfig.id = String(item.id);
+            onPlayVideo(playConfig);
+        }
+    }
+  };
+
+  const handleRemoveFromHistory = async (e: React.MouseEvent, item: WatchHistoryItem) => {
+      e.stopPropagation();
+      if (!currentProfile) return;
+      const success = await storageService.removeFromHistory(currentProfile.id, item.id, item.type);
+      if (success) {
+          setWatchHistory(prev => prev.filter(i => !(i.id === item.id && i.type === item.type)));
+      }
   };
 
   const toggleMyList = async () => {
@@ -126,7 +161,6 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
      }
   };
   
-  // Handler pro Play da AI (direto pro player)
   const handleAIPlay = async (movie: Movie) => {
       setShowAIModal(false);
       const isTv = movie.media_type === 'tv';
@@ -134,7 +168,6 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
           onPlayVideo({ type: 'tv', id: String(movie.id), tmdbId: movie.id, season: 1, episode: 1 });
       } else {
           try {
-              // Precisa pegar o IMDb ID para filmes
               const details = await tmdb.getMovieDetails(String(movie.id));
               if (details && details.imdb_id) {
                   onPlayVideo({ type: 'movie', id: details.imdb_id, tmdbId: movie.id });
@@ -258,27 +291,42 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
                 </div>
 
                 <div className="flex overflow-x-auto gap-4 pb-8 pr-4 hide-scrollbar snap-x cursor-grab active:cursor-grabbing">
-                    {watchHistory.map((item, idx) => (
-                      <div key={`${item.id}-${item.timestamp}`} onClick={() => handleHistoryClick(item)} className="flex-none w-[260px] md:w-[320px] snap-start group relative cursor-pointer">
-                          <div className="relative aspect-video rounded-xl overflow-hidden bg-gray-800 shadow-lg ring-1 ring-white/5 group-hover:ring-primary/50 transition-all duration-500">
-                              <img src={tmdb.getBackdropUrl(item.backdrop_path)} alt={item.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
-                              <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                  <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 scale-50 group-hover:scale-100 transition-all duration-300 border border-white/30">
-                                      <span className="material-symbols-rounded text-white text-3xl ml-1">play_arrow</span>
+                    {watchHistory.map((item, idx) => {
+                        const progressPercent = item.duration ? (item.progress || 0) / item.duration * 100 : 0;
+                        return (
+                          <div key={`${item.id}-${item.timestamp}`} onClick={() => handleHistoryClick(item)} className="flex-none w-[260px] md:w-[320px] snap-start group relative cursor-pointer">
+                              
+                              {/* REMOVE BUTTON */}
+                              <button 
+                                onClick={(e) => handleRemoveFromHistory(e, item)}
+                                className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-red-500 text-white/70 hover:text-white flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 z-30 backdrop-blur-sm border border-white/10 hover:scale-110"
+                                title="Remover do histórico"
+                              >
+                                <span className="material-symbols-rounded text-lg">close</span>
+                              </button>
+
+                              <div className="relative aspect-video rounded-xl overflow-hidden bg-gray-800 shadow-lg ring-1 ring-white/5 group-hover:ring-primary/50 transition-all duration-500">
+                                  <img src={tmdb.getBackdropUrl(item.backdrop_path)} alt={item.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                                  <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                      <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 scale-50 group-hover:scale-100 transition-all duration-300 border border-white/30">
+                                          <span className="material-symbols-rounded text-white text-3xl ml-1">play_arrow</span>
+                                      </div>
+                                  </div>
+                                  
+                                  {/* Progress Bar */}
+                                  <div className="absolute bottom-0 left-0 w-full h-1 bg-white/10">
+                                      <div className="h-full bg-gradient-to-r from-primary to-purple-500 shadow-[0_0_10px_#f20df2]" style={{ width: `${progressPercent}%` }}></div>
                                   </div>
                               </div>
-                              <div className="absolute bottom-0 left-0 w-full h-1 bg-white/10">
-                                  <div className="h-full bg-gradient-to-r from-primary to-purple-500 shadow-[0_0_10px_#f20df2]" style={{ width: '45%' }}></div>
+                              <div className="mt-3">
+                                  <h3 className="text-white text-sm font-bold truncate group-hover:text-primary transition-colors">{item.title}</h3>
+                                  <p className="text-white/40 text-xs mt-0.5">
+                                    {item.type === 'tv' && item.season ? `T${item.season}:E${item.episode}` : 'Filme'} • {Math.floor(progressPercent)}%
+                                  </p>
                               </div>
                           </div>
-                          <div className="mt-3">
-                              <h3 className="text-white text-sm font-bold truncate group-hover:text-primary transition-colors">{item.title}</h3>
-                              <p className="text-white/40 text-xs mt-0.5">
-                                {item.type === 'tv' && item.season ? `Temporada ${item.season} • Episódio ${item.episode}` : 'Filme'}
-                              </p>
-                          </div>
-                      </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </section>
           )}

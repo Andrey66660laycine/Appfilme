@@ -45,7 +45,7 @@ export const storageService = {
                 name,
                 avatar,
                 is_kid: isKid,
-                is_premium: false, // Legacy field
+                is_premium: false,
                 total_watch_time: 0,
                 total_movies_watched: 0,
                 total_episodes_watched: 0
@@ -53,13 +53,9 @@ export const storageService = {
             .select()
             .single();
 
-        if (error) {
-            console.error("Erro ao criar perfil:", error.message);
-            return null;
-        }
+        if (error) return null;
         return data;
       } catch (e) {
-          console.error("Erro ao criar perfil", e);
           return null;
       }
   },
@@ -73,13 +69,11 @@ export const storageService = {
             
         return !error;
       } catch (e) {
-          console.error("Erro ao atualizar perfil", e);
           return false;
       }
   },
 
   setProfilePremium: async (profileId: string, isPremium: boolean): Promise<boolean> => {
-      // Deprecated but kept for compatibility
       try {
           const { error } = await supabase
             .from('profiles')
@@ -96,65 +90,46 @@ export const storageService = {
         const { error } = await supabase.from('profiles').delete().eq('id', profileId);
         return !error;
       } catch (e) {
-          console.error("Erro ao deletar perfil", e);
           return false;
       }
   },
 
-  // FUNCTION TO WIPE ALL USER DATA (Account Deletion)
   deleteAccountData: async (): Promise<boolean> => {
       try {
         const user = await getUser();
         if (!user) return false;
-
-        // Devido ao RLS e Cascade Delete, deletar os perfis deve limpar o resto.
         const { error } = await supabase
             .from('profiles')
             .delete()
             .eq('user_id', user.id);
-
-        if (error) {
-            console.error("Falha ao apagar dados da conta:", error.message);
-            return false;
-        }
+        if (error) return false;
         return true;
       } catch (e) {
-          console.error("Erro crítico ao apagar conta", e);
           return false;
       }
   },
 
   updateWatchStats: async (profileId: string, seconds: number, movieCount: number = 0, episodeCount: number = 0) => {
       try {
-        const { data, error } = await supabase
+        const { data } = await supabase
             .from('profiles')
             .select('total_watch_time, total_movies_watched, total_episodes_watched')
             .eq('id', profileId)
             .single();
         
-        if (error) {
-            console.error("Erro ao ler stats:", error.message);
-            return;
-        }
-        
         if (data) {
-            // Garante que valores nulos sejam tratados como 0
             const currentWatchTime = data.total_watch_time || 0;
             const currentMovies = data.total_movies_watched || 0;
             const currentEpisodes = data.total_episodes_watched || 0;
 
-            const { error: updateError } = await supabase.from('profiles').update({
+            await supabase.from('profiles').update({
                 total_watch_time: currentWatchTime + seconds,
                 total_movies_watched: currentMovies + movieCount,
                 total_episodes_watched: currentEpisodes + episodeCount
             }).eq('id', profileId);
-
-            if (updateError) {
-                console.error("Erro ao atualizar stats:", updateError.message);
-            }
         }
       } catch (e) {
-          console.error("Erro exception stats update", e);
+          console.error("Erro stats", e);
       }
   },
 
@@ -171,19 +146,65 @@ export const storageService = {
         .order('created_at', { ascending: false })
         .limit(50);
 
-      if (error) {
-          console.error("Supabase Error (getHistory):", error.message);
-          return [];
-      }
+      if (error) return [];
       
       return (data || []).map((item: any) => ({
           ...item,
-          timestamp: item.created_at ? new Date(item.created_at).getTime() : Date.now()
+          timestamp: item.created_at ? new Date(item.created_at).getTime() : Date.now(),
+          progress: item.progress || 0,
+          duration: item.duration || 0
       }));
     } catch (e: any) {
-      console.error("Erro ao ler histórico:", e.message || e);
       return [];
     }
+  },
+
+  // Remove item do histórico
+  removeFromHistory: async (profileId: string, tmdbId: number, type: 'movie' | 'tv'): Promise<boolean> => {
+      try {
+          const { error } = await supabase
+              .from('watch_history')
+              .delete()
+              .eq('profile_id', profileId)
+              .eq('tmdb_id', tmdbId)
+              .eq('type', type);
+          return !error;
+      } catch (e) {
+          return false;
+      }
+  },
+
+  // Atualiza apenas o progresso sem criar nova entrada se não precisar
+  updateProgress: async (profileId: string, tmdbId: number, type: 'movie'|'tv', progress: number, duration: number, season?: number, episode?: number) => {
+      try {
+        const user = await getUser();
+        if (!user) return;
+
+        // Verifica se existe
+        const { data: existing } = await supabase
+            .from('watch_history')
+            .select('id')
+            .eq('profile_id', profileId)
+            .eq('tmdb_id', tmdbId)
+            .eq('type', type)
+            .maybeSingle();
+        
+        if (existing) {
+            // Atualiza
+             await supabase
+                .from('watch_history')
+                .update({ 
+                    progress, 
+                    duration, 
+                    season: season || null, 
+                    episode: episode || null,
+                    created_at: new Date().toISOString() // Bump to top
+                })
+                .eq('id', existing.id);
+        }
+      } catch (e) {
+          console.error("Erro update progress", e);
+      }
   },
 
   addToHistory: async (profileId: string, item: WatchHistoryItem) => {
@@ -191,11 +212,9 @@ export const storageService = {
       const user = await getUser();
       if (!user || !profileId) return;
 
-      // 1. VERIFICAR SE JÁ EXISTE NO HISTÓRICO
-      // Se existir, nós NÃO incrementamos a contagem de filmes/episódios, apenas atualizamos o tempo.
-      const { data: existingItem, error: fetchError } = await supabase
+      const { data: existingItem } = await supabase
         .from('watch_history')
-        .select('id')
+        .select('id, progress, duration')
         .eq('profile_id', profileId)
         .eq('tmdb_id', item.id)
         .eq('type', item.type)
@@ -203,7 +222,10 @@ export const storageService = {
 
       const isNewEntry = !existingItem;
 
-      // 2. SALVAR NO HISTÓRICO (Upsert atualiza o created_at/timestamp se já existir)
+      // Mantém o progresso se já existir e o novo não for passado (ou seja, apenas clicou no card)
+      const progressToSave = item.progress !== undefined ? item.progress : (existingItem?.progress || 0);
+      const durationToSave = item.duration !== undefined ? item.duration : (existingItem?.duration || 0);
+
       const { error } = await supabase
         .from('watch_history')
         .upsert({
@@ -217,27 +239,21 @@ export const storageService = {
           vote_average: item.vote_average,
           season: item.season,
           episode: item.episode,
+          progress: progressToSave,
+          duration: durationToSave,
           created_at: new Date().toISOString()
         }, { onConflict: 'profile_id,tmdb_id,type' });
 
-      if (!error) {
-          // 3. ATUALIZAR ESTATÍSTICAS APENAS SE FOR NOVO
-          if (isNewEntry) {
-              const isMovie = item.type === 'movie';
-              await storageService.updateWatchStats(profileId, 0, isMovie ? 1 : 0, isMovie ? 0 : 1);
-              console.log("Stats incremented for new entry:", item.title);
-          } else {
-              console.log("Entry exists, stats skipped for:", item.title);
-          }
-      } else {
-          console.error("Erro Supabase History Insert:", error.message);
+      if (!error && isNewEntry) {
+          const isMovie = item.type === 'movie';
+          await storageService.updateWatchStats(profileId, 0, isMovie ? 1 : 0, isMovie ? 0 : 1);
       }
     } catch (e) {
       console.error("Erro ao salvar histórico", e);
     }
   },
 
-  // --- LIBRARY (Profile Scoped) ---
+  // --- LIBRARY ---
   
   getLibrary: async (profileId: string): Promise<LibraryItem[]> => {
     try {
@@ -248,9 +264,7 @@ export const storageService = {
         .eq('profile_id', profileId)
         .order('added_at', { ascending: false });
 
-      if (error) {
-          return [];
-      }
+      if (error) return [];
 
       return (data || []).map((row: any) => ({
         id: row.tmdb_id,
@@ -335,14 +349,17 @@ export const storageService = {
         if (!profileId) return 0;
         const { data } = await supabase
             .from('watch_history')
-            .select('id')
+            .select('progress, duration')
             .eq('profile_id', profileId)
             .eq('tmdb_id', id)
             .eq('type', type)
-            .limit(1);
+            .limit(1)
+            .maybeSingle();
 
-        if (type === 'movie') return (data && data.length > 0) ? 100 : 0;
-        return (data && data.length > 0) ? 30 : 0;
+        if (data && data.duration > 0) {
+            return (data.progress / data.duration) * 100;
+        }
+        return 0;
       } catch {
         return 0;
       }

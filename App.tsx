@@ -22,6 +22,7 @@ interface PlayerState {
   tmdbId?: number; // Needed for history
   season?: number;
   episode?: number;
+  initialTime?: number; // Resume feature
 }
 
 interface NextEpisodeInfo {
@@ -403,6 +404,12 @@ const App: React.FC = () => {
               src={nativeVideoUrl} 
               onClose={closePlayer} 
               title={getPlayerTitle()}
+              profileId={currentProfile.id}
+              tmdbId={playerState.tmdbId}
+              type={playerState.type}
+              season={playerState.season}
+              episode={playerState.episode}
+              initialTime={playerState.initialTime}
           />
       )}
 

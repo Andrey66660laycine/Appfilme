@@ -70,6 +70,8 @@ export interface WatchHistoryItem {
   season?: number;
   episode?: number;
   vote_average: number;
+  progress?: number; // Segundos assistidos
+  duration?: number; // Duração total em segundos
 }
 
 export interface LibraryItem {
@@ -99,5 +101,6 @@ export interface Profile {
 declare global {
   interface Window {
     onVideoDetected: (url: string) => void;
+    Hls: any;
   }
 }

@@ -11,6 +11,15 @@ interface HomeProps {
   onPlayVideo: (config: any) => void;
 }
 
+const SAGAS = [
+    { id: 1241, name: 'Harry Potter', image: 'https://image.tmdb.org/t/p/w1280/wfnMt6LGqYHcNyWEqTEpWCn7bOV.jpg' },
+    { id: 10, name: 'Star Wars', image: 'https://image.tmdb.org/t/p/w1280/d8duYyyC9J5T825Hg7grmaabfxQ.jpg' },
+    { id: 86311, name: 'Universo Marvel', image: 'https://image.tmdb.org/t/p/w1280/mdf6322h31db5Z095729c065f50.jpg' },
+    { id: 9485, name: 'Velozes & Furiosos', image: 'https://image.tmdb.org/t/p/w1280/z5A5W3WYJc3UVEWljSGwdjDgQ0j.jpg' },
+    { id: 119, name: 'O Senhor dos Anéis', image: 'https://image.tmdb.org/t/p/w1280/bccR2CGTWVSSZDO7S5cVruhHVk9.jpg' },
+    { id: 131635, name: 'Jogos Vorazes', image: 'https://image.tmdb.org/t/p/w1280/Ipp5Qta090x6Z273V4Q2z6K3uW.jpg' }
+];
+
 const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
   const currentProfile = useContext(ProfileContext);
   const [trending, setTrending] = useState<Movie[]>([]);
@@ -81,6 +90,10 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
 
   const handleClick = (item: Movie) => {
     onMovieClick(item.id, item.media_type === 'tv' || activeTab === 'tv' || activeTab === 'originals' ? 'tv' : 'movie');
+  };
+
+  const handleSagaClick = (id: number) => {
+      window.location.hash = `#/collection/${id}`;
   };
 
   const handleHistoryClick = async (item: WatchHistoryItem) => {
@@ -384,6 +397,35 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
                     })}
                 </div>
             </section>
+          )}
+
+          {/* SECTION: Sagas (NEW) */}
+          {!currentProfile?.is_kid && (
+              <section className="pl-4 lg:pl-16">
+                  <h2 className="text-white text-lg md:text-xl font-display font-bold tracking-tight mb-6 flex items-center gap-2">
+                      Franquias Lendárias
+                      <span className="text-[10px] bg-primary text-white px-2 py-0.5 rounded-full uppercase tracking-widest shadow-lg shadow-primary/30">Coleções</span>
+                  </h2>
+                  <div className="flex overflow-x-auto gap-4 pb-8 pr-4 hide-scrollbar snap-x">
+                      {SAGAS.map((saga) => (
+                          <div 
+                              key={saga.id} 
+                              onClick={() => handleSagaClick(saga.id)}
+                              className="relative flex-none w-[280px] h-[160px] rounded-xl overflow-hidden cursor-pointer group snap-start ring-1 ring-white/10 hover:ring-primary/60 transition-all duration-500"
+                          >
+                              <div className="absolute inset-0 bg-black animate-pulse"></div>
+                              <img src={saga.image} alt={saga.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 group-hover:brightness-110" />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent opacity-80 group-hover:opacity-60 transition-opacity"></div>
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                  <span className="font-display font-bold text-xl text-white text-center px-4 drop-shadow-lg transform group-hover:scale-110 transition-transform duration-300">
+                                      {saga.name}
+                                  </span>
+                              </div>
+                              <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-primary to-blue-500 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left"></div>
+                          </div>
+                      ))}
+                  </div>
+              </section>
           )}
 
           {/* SECTION: Top 10 Trending */}

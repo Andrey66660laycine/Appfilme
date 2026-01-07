@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useRef, useContext } from 'react';
 import { tmdb } from '../services/tmdbService';
 import { storageService } from '../services/storageService';
-import { MovieDetails as MovieDetailsType, CastMember } from '../types';
+import { MovieDetails as MovieDetailsType, CastMember, Movie } from '../types';
 import { ProfileContext } from '../App';
 
 interface MovieDetailsProps {
@@ -14,6 +14,7 @@ const MovieDetails: React.FC<MovieDetailsProps> = ({ id, onPlay }) => {
   const currentProfile = useContext(ProfileContext);
   const [movie, setMovie] = useState<MovieDetailsType | null>(null);
   const [cast, setCast] = useState<CastMember[]>([]);
+  const [related, setRelated] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'more' | 'details'>('overview');
   const [inList, setInList] = useState(false);
@@ -32,14 +33,17 @@ const MovieDetails: React.FC<MovieDetailsProps> = ({ id, onPlay }) => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [movieData, castData, videosData] = await Promise.all([
+        setLoading(true);
+        const [movieData, castData, videosData, relatedData] = await Promise.all([
           tmdb.getMovieDetails(id),
           tmdb.getMovieCast(id),
-          tmdb.getVideos(id, 'movie')
+          tmdb.getVideos(id, 'movie'),
+          tmdb.getRecommendations(id, 'movie')
         ]);
         
         setMovie(movieData);
         setCast(castData);
+        setRelated(relatedData);
         
         // Find trailer
         const trailer = videosData.find((v: any) => v.type === "Trailer" && v.site === "YouTube") || videosData.find((v: any) => v.site === "YouTube");
@@ -112,6 +116,10 @@ const MovieDetails: React.FC<MovieDetailsProps> = ({ id, onPlay }) => {
       } else {
           showToast('videocam_off', 'Trailer indisponível no momento');
       }
+  };
+
+  const handleRelatedClick = (relatedId: number) => {
+      window.location.hash = `#/movie/${relatedId}`;
   };
 
   const toggleMyList = async () => {
@@ -335,16 +343,23 @@ const MovieDetails: React.FC<MovieDetailsProps> = ({ id, onPlay }) => {
           </div>
         )}
 
-        {/* TAB CONTENT: RELACIONADOS (Placeholder) */}
+        {/* TAB CONTENT: RELACIONADOS (Implemented) */}
         {activeTab === 'more' && (
           <div className="tab-content animate-fade-in">
-            <div className="grid grid-cols-3 gap-3">
-              {[1, 2, 3, 4, 5, 6].map(i => (
-                <div key={i} className="aspect-[2/3] rounded-lg overflow-hidden bg-surface animate-pulse-fast">
-                   <div className="w-full h-full bg-white/5"></div>
+            {related.length > 0 ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {related.slice(0, 12).map(item => (
+                    <div key={item.id} onClick={() => handleRelatedClick(item.id)} className="relative aspect-[2/3] rounded-lg overflow-hidden group cursor-pointer ring-1 ring-white/5 hover:ring-primary/50 transition-all duration-300">
+                        <img src={tmdb.getPosterUrl(item.poster_path)} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt={item.title} />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
+                            <p className="text-white font-bold text-xs line-clamp-2">{item.title}</p>
+                        </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+            ) : (
+                <div className="text-center py-10 text-white/40 text-sm">Sem títulos relacionados no momento.</div>
+            )}
           </div>
         )}
 

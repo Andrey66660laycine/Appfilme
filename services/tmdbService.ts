@@ -73,6 +73,19 @@ export const tmdb = {
       }
   },
 
+  // NOVA FUNÇÃO: Busca detalhes de uma coleção (Saga)
+  getCollection: async (collectionId: number): Promise<any | null> => {
+      try {
+          const res = await fetch(`${BASE_URL}/collection/${collectionId}?api_key=${API_KEY}&language=${LANG}`);
+          const data = await res.json();
+          if (data.success === false) return null;
+          return data;
+      } catch (error) {
+          console.error("Failed to fetch collection:", error);
+          return null;
+      }
+  },
+
   getMovieDetails: async (id: string): Promise<MovieDetails | null> => {
     try {
       const res = await fetch(`${BASE_URL}/movie/${id}?api_key=${API_KEY}&language=${LANG}`);

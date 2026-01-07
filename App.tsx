@@ -7,7 +7,8 @@ import TVDetails from './pages/TVDetails';
 import Welcome from './pages/Welcome';
 import Library from './pages/Library';
 import ProfileGateway from './pages/ProfileGateway';
-import PrivacyPolicy from './pages/PrivacyPolicy'; // Import New Page
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import CollectionDetails from './pages/CollectionDetails'; // Import New Page
 import SplashScreen from './components/SplashScreen'; 
 import { tmdb } from './services/tmdbService';
 import { storageService } from './services/storageService';
@@ -433,6 +434,10 @@ const App: React.FC = () => {
     if (hash.startsWith('#/tv/')) {
       const id = hash.replace('#/tv/', '');
       return <TVDetails id={id} onPlay={(c) => handlePlayRequest({...c, tmdbId: Number(id)})} />;
+    }
+    if (hash.startsWith('#/collection/')) {
+      const id = hash.replace('#/collection/', '');
+      return <CollectionDetails id={id} onMovieClick={(id, type) => handleItemClick(id, type)} />;
     }
     if (hash.startsWith('#/search/')) {
       const query = decodeURIComponent(hash.replace('#/search/', ''));

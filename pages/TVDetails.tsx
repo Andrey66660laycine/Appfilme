@@ -49,7 +49,10 @@ const TVDetails: React.FC<TVDetailsProps> = ({ id, onPlay }) => {
             history.forEach(item => {
                 if (item.season && item.episode) {
                     // Calcula porcentagem se tiver duração, senão assume 0
-                    const pct = item.duration > 0 ? (item.progress / item.duration) * 100 : 0;
+                    // FIX: Garante que duration e progress tenham valor numérico (fallback para 0)
+                    const duration = item.duration || 0;
+                    const progress = item.progress || 0;
+                    const pct = duration > 0 ? (progress / duration) * 100 : 0;
                     map[`${item.season}-${item.episode}`] = pct;
                 }
             });

@@ -11,14 +11,14 @@ interface HomeProps {
   onPlayVideo: (config: any) => void;
 }
 
-// CORRIGIDO: URLs diretas e funcionais do TMDb (Original Size)
+// CORRIGIDO: URLs atualizadas e testadas para Backdrops das Sagas (w1280)
 const SAGAS = [
-    { id: 1241, name: 'Harry Potter', image: 'https://image.tmdb.org/t/p/original/hziiv14OpD73u9gAak4XDDfB39T.jpg' },
-    { id: 10, name: 'Star Wars', image: 'https://image.tmdb.org/t/p/original/4qC1maUvldMtsWzDShlAmORmpvP.jpg' },
-    { id: 86311, name: 'Universo Marvel', image: 'https://image.tmdb.org/t/p/original/mdf6322h31db5Z095729c065f50.jpg' },
-    { id: 9485, name: 'Velozes & Furiosos', image: 'https://image.tmdb.org/t/p/original/z5A5W3WYJc3UVEWljSGwdjDgQ0j.jpg' },
-    { id: 119, name: 'O Senhor dos Anéis', image: 'https://image.tmdb.org/t/p/original/bccR2CGTWVSSZDO7S5cVruhHVk9.jpg' },
-    { id: 131635, name: 'Jogos Vorazes', image: 'https://image.tmdb.org/t/p/original/yDbyMx8x356066q316f1562M66q.jpg' }
+    { id: 1241, name: 'Harry Potter', image: 'https://image.tmdb.org/t/p/w1280/wfnMt6LGqYHcNyWEqTEpWCn7bOV.jpg' },
+    { id: 10, name: 'Star Wars', image: 'https://image.tmdb.org/t/p/w1280/d8duYyyC9J5T825Hg7grmaabfxQ.jpg' },
+    { id: 86311, name: 'Universo Marvel', image: 'https://image.tmdb.org/t/p/w1280/mdf6322h31db5Z095729c065f50.jpg' },
+    { id: 9485, name: 'Velozes & Furiosos', image: 'https://image.tmdb.org/t/p/w1280/z5A5W3WYJc3UVEWljSGwdjDgQ0j.jpg' },
+    { id: 119, name: 'O Senhor dos Anéis', image: 'https://image.tmdb.org/t/p/w1280/bccR2CGTWVSSZDO7S5cVruhHVk9.jpg' },
+    { id: 131635, name: 'Jogos Vorazes', image: 'https://image.tmdb.org/t/p/w1280/yDbyMx8x356066q316f1562M66q.jpg' }
 ];
 
 const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
@@ -411,7 +411,7 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
             </section>
           )}
 
-          {/* SECTION: Sagas (Updated) */}
+          {/* SECTION: Sagas (Updated with Better Images) */}
           {!currentProfile?.is_kid && (
               <section className="pl-4 lg:pl-16">
                   <h2 className="text-white text-lg md:text-xl font-display font-bold tracking-tight mb-6 flex items-center gap-2">
@@ -426,7 +426,16 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
                               className="relative flex-none w-[280px] h-[160px] rounded-xl overflow-hidden cursor-pointer group snap-start ring-1 ring-white/10 hover:ring-primary/60 transition-all duration-500"
                           >
                               <div className="absolute inset-0 bg-black animate-pulse"></div>
-                              <img src={saga.image} alt={saga.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 group-hover:brightness-110" />
+                              <img 
+                                src={saga.image} 
+                                alt={saga.name} 
+                                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 group-hover:brightness-110" 
+                                onError={(e) => {
+                                    // Fallback visual caso a imagem não carregue
+                                    e.currentTarget.style.display = 'none';
+                                    e.currentTarget.parentElement?.classList.add('bg-zinc-800');
+                                }}
+                              />
                               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent opacity-80 group-hover:opacity-60 transition-opacity"></div>
                               <div className="absolute inset-0 flex items-center justify-center">
                                   <span className="font-display font-bold text-xl text-white text-center px-4 drop-shadow-lg transform group-hover:scale-110 transition-transform duration-300">

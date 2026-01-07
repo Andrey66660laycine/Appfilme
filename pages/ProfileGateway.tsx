@@ -8,54 +8,24 @@ interface ProfileGatewayProps {
   onLogout: () => void;
 }
 
-// Avatares inspirados em serviços de streaming (Usando imagens públicas do TMDB/Dicebear)
+// Avatares Estáveis (Apenas Clássicos/Aventureiros para evitar bugs de carregamento)
 const AVATAR_COLLECTIONS: Record<string, string[]> = {
-  "Originais": [
-      "https://image.tmdb.org/t/p/w200/8q8q8q8q8q8q8q8q8q.jpg", // Placeholder pattern
-      "https://image.tmdb.org/t/p/w200/A3i709j999J3gD657e.jpg", // Red Mask
-      "https://image.tmdb.org/t/p/w200/kp8p3Y375K3554645.jpg", // Dali Mask
-      "https://image.tmdb.org/t/p/w200/533Z2X77777777777.jpg", // Squid Game
-      "https://image.tmdb.org/t/p/w200/9e9e9e9e9e9e9e9e9e.jpg", // Stranger Things vibe
-      "https://image.tmdb.org/t/p/w200/3bOGNsHlrswhyW79uvIHH1V43JI.jpg", // Breaking Bad
-      "https://image.tmdb.org/t/p/w200/b7fTC9WFkgqGOv77mLQzqDCVX0y.jpg", // Peak Blinders
-      "https://image.tmdb.org/t/p/w200/stTEycfG9928HYGEISBFaG1ngjC.jpg", // Wednesday
-      "https://image.tmdb.org/t/p/w200/6v0fT8h8jN7e0r0m0o0p0q0s0t.jpg",
-  ],
-  "Heróis & Vilões": [
-      "https://image.tmdb.org/t/p/w200/8Vt6mWEReuy4Of61Lnj5Xj704m8.jpg", // Spider
-      "https://image.tmdb.org/t/p/w200/74xTEgt7R36Fpooo50r9T25onhq.jpg", // Batman
-      "https://image.tmdb.org/t/p/w200/gajva2L0rPYkEWjzgFlBXCAVBE5.jpg", // Deadpool
-      "https://image.tmdb.org/t/p/w200/l5K9eluyEajaxabjkeJ.jpg", // Joker
-      "https://image.tmdb.org/t/p/w200/623456789012345678.jpg", // Iron Man vibe
-      "https://image.tmdb.org/t/p/w200/n7RW7p6q38W3kXg8y0z9A8b7C6.jpg", // Wonder Woman
-      "https://image.tmdb.org/t/p/w200/qm7W9D1r5v6F9g8h7i6j5k4l3m.jpg", // Superman
-      "https://image.tmdb.org/t/p/w200/1kks3YnQw8vF9p5m6n7o8q9r0s.jpg", // Thanos
-  ],
-  "Animação": [
-      "https://image.tmdb.org/t/p/w200/qA5kPYZA7FkVvqnOBV7nCxpWSDv.jpg", // Toy Story
-      "https://image.tmdb.org/t/p/w200/t6HIqrRAclMCA60NsSmeqe9RmNV.jpg", // Minions
-      "https://image.tmdb.org/t/p/w200/kDp1vUBnMpe8ak4rjgl3cLELqjU.jpg", // Kung Fu Panda
-      "https://image.tmdb.org/t/p/w200/w2PMyoyLU22YvrGKz.jpg", // Shrek
-      "https://image.tmdb.org/t/p/w200/234567890123456789.jpg", // Frozen
-      "https://image.tmdb.org/t/p/w200/yYRwQmaOpnvabdNSiybv53835M5.jpg", // Spideyverse
-      "https://image.tmdb.org/t/p/w200/x7l9l5h8i6j7k8l9m0n1o2p3q4.jpg", // Stitch
-      "https://image.tmdb.org/t/p/w200/z0h1j2k3l4m5n6o7p8q9r0s1t.jpg", // Mario
-  ],
-  "Sci-Fi & Fantasia": [
-      "https://image.tmdb.org/t/p/w200/5u18BDTk60Nl19hXJ8yJ5o4p0q.jpg", // Avatar
-      "https://image.tmdb.org/t/p/w200/dzBT7j5KKG9j9g0h0i1j2k3l4m.jpg", // Dune
-      "https://image.tmdb.org/t/p/w200/9g8h7i6j5k4l3m2n1o0p9q8r7.jpg", // Star Wars
-      "https://image.tmdb.org/t/p/w200/1a2b3c4d5e6f7g8h9i0j1k2l3.jpg", // LOTR
-      "https://image.tmdb.org/t/p/w200/4m5n6o7p8q9r0s1t2u3v4w5x6.jpg", // Harry Potter
-      "https://image.tmdb.org/t/p/w200/7y8z9a0b1c2d3e4f5g6h7i8j9.jpg", // Game of Thrones
-  ],
-  "Clássicos": [
+  "Personagens": [
       "https://api.dicebear.com/7.x/adventurer/svg?seed=Felix",
       "https://api.dicebear.com/7.x/adventurer/svg?seed=Aneka",
       "https://api.dicebear.com/7.x/adventurer/svg?seed=Christopher",
       "https://api.dicebear.com/7.x/adventurer/svg?seed=Jack",
-      "https://api.dicebear.com/7.x/micah/svg?seed=Nala",
-      "https://api.dicebear.com/7.x/micah/svg?seed=Leo"
+      "https://api.dicebear.com/7.x/adventurer/svg?seed=Nala",
+      "https://api.dicebear.com/7.x/adventurer/svg?seed=Leo",
+      "https://api.dicebear.com/7.x/adventurer/svg?seed=Willow",
+      "https://api.dicebear.com/7.x/adventurer/svg?seed=Socks",
+      "https://api.dicebear.com/7.x/adventurer/svg?seed=Zoey",
+      "https://api.dicebear.com/7.x/adventurer/svg?seed=Trouble",
+      "https://api.dicebear.com/7.x/adventurer/svg?seed=Bandit",
+      "https://api.dicebear.com/7.x/adventurer/svg?seed=Mist",
+      "https://api.dicebear.com/7.x/adventurer/svg?seed=Shadow",
+      "https://api.dicebear.com/7.x/adventurer/svg?seed=Luna",
+      "https://api.dicebear.com/7.x/adventurer/svg?seed=Buddy"
   ]
 };
 
@@ -63,7 +33,7 @@ const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogo
   const [view, setView] = useState<'gateway' | 'editor' | 'dashboard' | 'account_settings'>('gateway');
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
-  const [avatarCategory, setAvatarCategory] = useState("Originais");
+  const [avatarCategory, setAvatarCategory] = useState("Personagens");
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState("");
   const [nameInput, setNameInput] = useState("");
@@ -87,7 +57,7 @@ const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogo
     if (!nameInput.trim()) return alert("Digite um nome!");
     
     // Default avatar if none selected
-    const avatarToUse = selectedAvatar || AVATAR_COLLECTIONS["Originais"][0];
+    const avatarToUse = selectedAvatar || AVATAR_COLLECTIONS["Personagens"][0];
 
     if (editingProfile) {
         await storageService.updateProfile(editingProfile.id, {
@@ -139,7 +109,7 @@ const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogo
         setEditingProfile(null);
         setNameInput("");
         setIsKidInput(false);
-        setSelectedAvatar(AVATAR_COLLECTIONS["Originais"][Math.floor(Math.random() * 4)]);
+        setSelectedAvatar(AVATAR_COLLECTIONS["Personagens"][Math.floor(Math.random() * 4)]);
     }
     setView('editor');
   };
@@ -180,7 +150,7 @@ const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogo
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-6">
                     {AVATAR_COLLECTIONS[avatarCategory].map((src: string, index: number) => (
                         <div key={index} onClick={() => { setSelectedAvatar(src); setShowAvatarModal(false); }} className="aspect-square rounded-lg overflow-hidden cursor-pointer border-2 border-transparent hover:border-white transition-all hover:scale-110 bg-white/5 relative group">
-                            <img src={src} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt="Avatar" />
+                            <img src={src} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 bg-surface" alt="Avatar" />
                             <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors"></div>
                         </div>
                     ))}

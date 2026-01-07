@@ -7,7 +7,7 @@ import TVDetails from './pages/TVDetails';
 import Welcome from './pages/Welcome';
 import Library from './pages/Library';
 import ProfileGateway from './pages/ProfileGateway';
-import SplashScreen from './components/SplashScreen'; // Novo componente
+import SplashScreen from './components/SplashScreen'; 
 import { tmdb } from './services/tmdbService';
 import { storageService } from './services/storageService';
 import { supabase } from './services/supabase';
@@ -53,6 +53,7 @@ const App: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const controlsTimeoutRef = useRef<number | null>(null);
   const adContainerRef = useRef<HTMLDivElement>(null);
+  const loaderTimeoutRef = useRef<number | null>(null);
 
   // --- AUTH CHECK ---
   useEffect(() => {
@@ -79,7 +80,8 @@ const App: React.FC = () => {
   // --- HIDDEN CHRONOMETER (TRACK TIME) ---
   useEffect(() => {
       let interval: number;
-      if (currentProfile) {
+      // FIX: Agora atualiza as estatísticas APENAS quando o player está ATIVO (assistindo)
+      if (currentProfile && playerState) { 
           interval = window.setInterval(() => {
               storageService.updateWatchStats(currentProfile.id, 60);
           }, 60000);
@@ -87,7 +89,7 @@ const App: React.FC = () => {
       return () => {
           if (interval) clearInterval(interval);
       };
-  }, [currentProfile]);
+  }, [currentProfile, playerState]);
 
   // --- SCROLL EFFECT ---
   useEffect(() => {
@@ -165,6 +167,7 @@ const App: React.FC = () => {
             window.removeEventListener('mousemove', resetControls);
             window.removeEventListener('touchstart', resetControls);
             if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+            if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
         };
     } else {
         setNextEpisode(null);
@@ -248,12 +251,18 @@ const App: React.FC = () => {
 
   // --- PLAY LOGIC ---
   const startVideoPlayer = async (config: PlayerState) => {
-    // Reset loader state
+    // Reset loader state to SHOWING
     setIsIframeLoaded(false);
     
     // Set initial configuration
     let finalConfig = { ...config };
     setPendingPlayerState(null);
+
+    // FIX: Force loader to stay for exactly 5 seconds. Fodase se carregou ou não.
+    if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
+    loaderTimeoutRef.current = window.setTimeout(() => {
+        setIsIframeLoaded(true); // Hide loader after 5s
+    }, 5000);
 
     try {
         if (!currentProfile) {
@@ -320,6 +329,7 @@ const App: React.FC = () => {
   const closePlayer = () => { 
       setPlayerState(null); 
       setIsIframeLoaded(false);
+      if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
   };
 
   const getPlayerUrl = () => {
@@ -468,10 +478,6 @@ const App: React.FC = () => {
                     title="Player" 
                     allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
                     referrerPolicy="no-referrer"
-                    onLoad={() => {
-                        // Delay ligeiro para garantir que o visual carregou
-                        setTimeout(() => setIsIframeLoaded(true), 1000);
-                    }}
                  ></iframe>
             </div>
         </div>

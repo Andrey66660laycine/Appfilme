@@ -257,8 +257,8 @@ const App: React.FC = () => {
               s.appendChild(q);
               i.inpagepush('init', {
                 host: 'xml.qualiclicks.com',
-                feed: 1014621,
-                auth : '8UkP',
+                feed: 1014622,
+                auth : 'QhcS',
                 subid: '',
                 refresh: 120,
                 position: 'top',

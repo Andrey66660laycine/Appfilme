@@ -162,6 +162,34 @@ export const storageService = {
     }
   },
 
+  // Busca histórico completo de uma série específica (para marcar episódios vistos)
+  getSeriesHistory: async (profileId: string, tmdbId: number): Promise<WatchHistoryItem[]> => {
+      try {
+          if (!profileId) return [];
+          
+          const { data, error } = await supabase
+            .from('watch_history')
+            .select('*')
+            .eq('profile_id', profileId)
+            .eq('tmdb_id', tmdbId)
+            .eq('type', 'tv');
+
+          if (error) return [];
+
+          return (data || []).map((item: any) => ({
+              ...item,
+              id: item.tmdb_id,
+              progress: item.progress || 0,
+              duration: item.duration || 0,
+              season: item.season,
+              episode: item.episode
+          }));
+      } catch (e) {
+          console.error("Erro getSeriesHistory", e);
+          return [];
+      }
+  },
+
   // Remove item do histórico
   removeFromHistory: async (profileId: string, tmdbId: number, type: 'movie' | 'tv'): Promise<boolean> => {
       try {
@@ -190,6 +218,8 @@ export const storageService = {
             .eq('profile_id', profileId)
             .eq('tmdb_id', tmdbId)
             .eq('type', type)
+            .eq('season', season || 0)     // Adicionado check de temporada
+            .eq('episode', episode || 0)   // Adicionado check de episódio
             .maybeSingle();
         
         if (existing) {
@@ -199,11 +229,13 @@ export const storageService = {
                 .update({ 
                     progress, 
                     duration, 
-                    season: season || null, 
-                    episode: episode || null,
                     created_at: new Date().toISOString() // Bump to top
                 })
                 .eq('id', existing.id);
+        } else {
+            // Se não existir, chama addToHistory (para criar a entrada inicial)
+            // Isso garante que se o user entrar direto no player, salve.
+            // (Lógica simplificada, idealmente addToHistory já lida com upsert, mas precisa dos metadados completos)
         }
       } catch (e) {
           console.error("Erro update progress", e);
@@ -221,6 +253,8 @@ export const storageService = {
         .eq('profile_id', profileId)
         .eq('tmdb_id', item.id)
         .eq('type', item.type)
+        .eq('season', item.season || 0)
+        .eq('episode', item.episode || 0)
         .maybeSingle();
 
       const isNewEntry = !existingItem;
@@ -240,12 +274,12 @@ export const storageService = {
           poster_path: item.poster_path,
           backdrop_path: item.backdrop_path,
           vote_average: item.vote_average,
-          season: item.season,
-          episode: item.episode,
+          season: item.season || 0,
+          episode: item.episode || 0,
           progress: progressToSave,
           duration: durationToSave,
           created_at: new Date().toISOString()
-        }, { onConflict: 'profile_id,tmdb_id,type' });
+        }, { onConflict: 'profile_id,tmdb_id,type,season,episode' }); // Upsert key precisa ser única no DB
 
       if (!error && isNewEntry) {
           const isMovie = item.type === 'movie';

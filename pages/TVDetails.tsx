@@ -17,6 +17,9 @@ const TVDetails: React.FC<TVDetailsProps> = ({ id, onPlay }) => {
   const [related, setRelated] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
   
+  // Track watched status per episode (Season-Episode -> Progress%)
+  const [watchedMap, setWatchedMap] = useState<Record<string, number>>({});
+  
   // Tabs & Navigation State
   const [activeTab, setActiveTab] = useState<'episodes' | 'related' | 'details'>('episodes');
   const [selectedSeason, setSelectedSeason] = useState(1);
@@ -33,6 +36,31 @@ const TVDetails: React.FC<TVDetailsProps> = ({ id, onPlay }) => {
   });
 
   const parallaxRef = useRef<HTMLDivElement>(null);
+
+  // Carrega progresso dos episódios
+  useEffect(() => {
+    const loadProgress = async () => {
+        if (!currentProfile || !id) return;
+        
+        try {
+            const history = await storageService.getSeriesHistory(currentProfile.id, Number(id));
+            const map: Record<string, number> = {};
+            
+            history.forEach(item => {
+                if (item.season && item.episode) {
+                    // Calcula porcentagem se tiver duração, senão assume 0
+                    const pct = item.duration > 0 ? (item.progress / item.duration) * 100 : 0;
+                    map[`${item.season}-${item.episode}`] = pct;
+                }
+            });
+            setWatchedMap(map);
+        } catch (e) {
+            console.error("Erro ao carregar progresso da série", e);
+        }
+    };
+    
+    loadProgress();
+  }, [id, currentProfile, activeTab]); // Recarrega se mudar a aba (ex: voltando do player)
 
   useEffect(() => {
     const fetchSeriesData = async () => {
@@ -347,30 +375,51 @@ const TVDetails: React.FC<TVDetailsProps> = ({ id, onPlay }) => {
                     </div>
 
                     <div className="space-y-6">
-                        {episodes.map((ep) => (
-                          <div key={ep.id} className="group flex flex-col sm:flex-row gap-4 p-3 rounded-2xl hover:bg-white/5 border border-transparent hover:border-white/5 transition-all cursor-pointer" onClick={() => playEpisode(ep.episode_number)}>
-                            <div className="relative w-full sm:w-[180px] aspect-video rounded-xl overflow-hidden bg-surface shrink-0">
-                                <img 
-                                  src={ep.still_path ? `https://image.tmdb.org/t/p/w500${ep.still_path}` : tmdb.getBackdropUrl(series.backdrop_path)} 
-                                  className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-300"
-                                  alt={ep.name}
-                                />
-                                <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300">
-                                    <div className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center shadow-lg">
-                                        <span className="material-symbols-rounded fill-1">play_arrow</span>
-                                    </div>
-                                </div>
-                            </div>
+                        {episodes.map((ep) => {
+                          const progress = watchedMap[`${selectedSeason}-${ep.episode_number}`] || 0;
+                          const isWatched = progress > 85;
+                          const inProgress = progress > 0 && progress <= 85;
 
-                            <div className="flex-1 flex flex-col justify-center gap-1.5">
-                                <div className="flex justify-between items-start">
-                                    <h3 className="text-white font-bold text-base leading-tight group-hover:text-primary transition-colors">{ep.episode_number}. {ep.name}</h3>
-                                </div>
-                                <span className="text-white/40 text-xs font-medium">S{selectedSeason} E{ep.episode_number} • {ep.air_date ? new Date(ep.air_date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }) : 'TBA'}</span>
-                                <p className="text-white/60 text-xs leading-relaxed line-clamp-2">{ep.overview || "Sem descrição disponível."}</p>
+                          return (
+                            <div key={ep.id} className="group flex flex-col sm:flex-row gap-4 p-3 rounded-2xl hover:bg-white/5 border border-transparent hover:border-white/5 transition-all cursor-pointer" onClick={() => playEpisode(ep.episode_number)}>
+                              <div className="relative w-full sm:w-[180px] aspect-video rounded-xl overflow-hidden bg-surface shrink-0">
+                                  <img 
+                                    src={ep.still_path ? `https://image.tmdb.org/t/p/w500${ep.still_path}` : tmdb.getBackdropUrl(series.backdrop_path)} 
+                                    className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-300"
+                                    alt={ep.name}
+                                  />
+                                  
+                                  {/* Overlay Play Icon */}
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300">
+                                      <div className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center shadow-lg">
+                                          <span className="material-symbols-rounded fill-1">play_arrow</span>
+                                      </div>
+                                  </div>
+
+                                  {/* Progress / Watched Indicator */}
+                                  {isWatched && (
+                                      <div className="absolute top-2 right-2 bg-green-500/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-md backdrop-blur-sm flex items-center gap-1">
+                                          <span className="material-symbols-rounded text-[10px]">check</span> VISTO
+                                      </div>
+                                  )}
+
+                                  {inProgress && (
+                                      <div className="absolute bottom-0 left-0 w-full h-1 bg-white/20">
+                                          <div className="h-full bg-primary shadow-[0_0_5px_#f20df2]" style={{ width: `${progress}%` }}></div>
+                                      </div>
+                                  )}
+                              </div>
+
+                              <div className="flex-1 flex flex-col justify-center gap-1.5">
+                                  <div className="flex justify-between items-start">
+                                      <h3 className={`font-bold text-base leading-tight transition-colors ${isWatched ? 'text-white/60' : 'text-white group-hover:text-primary'}`}>{ep.episode_number}. {ep.name}</h3>
+                                  </div>
+                                  <span className="text-white/40 text-xs font-medium">S{selectedSeason} E{ep.episode_number} • {ep.air_date ? new Date(ep.air_date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }) : 'TBA'}</span>
+                                  <p className="text-white/60 text-xs leading-relaxed line-clamp-2">{ep.overview || "Sem descrição disponível."}</p>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                     </div>
                 </div>
             )}

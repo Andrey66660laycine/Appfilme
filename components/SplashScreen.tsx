@@ -94,6 +94,11 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
         </div>
       </div>
 
+      {/* VERSION NUMBER */}
+      <div className="absolute bottom-8 z-20 opacity-0 animate-fade-in" style={{ animationDelay: '2s', animationFillMode: 'forwards' }}>
+          <span className="text-white/20 font-mono text-[10px] tracking-widest">v1.0.0</span>
+      </div>
+
       {/* CSS STYLES INJECTED */}
       <style>{`
         /* 1. CINEMATIC REVEAL (Blur -> Focus) */

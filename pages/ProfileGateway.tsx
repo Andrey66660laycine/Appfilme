@@ -210,6 +210,11 @@ const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogo
                      </button>
                      <button onClick={onLogout} className="text-red-500 font-bold hover:underline">Sair da Conta</button>
                 </div>
+
+                {/* VERSION TAG */}
+                <div className="absolute bottom-6 right-6 text-white/20 font-mono text-[10px] tracking-widest animate-fade-in">
+                    v1.0.0
+                </div>
            </div>
        )}
        

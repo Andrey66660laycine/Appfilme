@@ -41,7 +41,7 @@ const App: React.FC = () => {
   const [isPlayerLoading, setIsPlayerLoading] = useState(false);
   const [nextEpisode, setNextEpisode] = useState<NextEpisodeInfo | null>(null);
   
-  // Ads States (Mandatory now)
+  // Ads States
   const [pendingPlayerState, setPendingPlayerState] = useState<PlayerState | null>(null);
   const [showAds, setShowAds] = useState(false);
   const [adTimer, setAdTimer] = useState(15);
@@ -91,10 +91,10 @@ const App: React.FC = () => {
     const handleScroll = () => {
       if (navbar) {
         if (window.scrollY > 50) {
-          navbar.classList.add('bg-black/80', 'backdrop-blur-xl', 'shadow-lg', 'py-2');
+          navbar.classList.add('bg-black/90', 'backdrop-blur-xl', 'shadow-lg', 'py-2');
           navbar.classList.remove('py-4');
         } else {
-          navbar.classList.remove('bg-black/80', 'backdrop-blur-xl', 'shadow-lg', 'py-2');
+          navbar.classList.remove('bg-black/90', 'backdrop-blur-xl', 'shadow-lg', 'py-2');
           navbar.classList.add('py-4');
         }
       }
@@ -122,9 +122,7 @@ const App: React.FC = () => {
         const calculateNextEpisode = async () => {
             if (playerState.type === 'tv' && playerState.tmdbId && playerState.season && playerState.episode) {
                 try {
-                    // Fetch series details to know total seasons
                     const seriesDetails = await tmdb.getTVDetails(String(playerState.tmdbId));
-                    // Fetch current season details to know total episodes in this season
                     const seasonEpisodes = await tmdb.getTVSeason(String(playerState.tmdbId), playerState.season);
                     
                     if (seriesDetails && seasonEpisodes) {
@@ -151,7 +149,6 @@ const App: React.FC = () => {
                         }
                     }
                 } catch (e) {
-                    console.error("Erro ao calcular próximo episódio", e);
                     setNextEpisode(null);
                 }
             } else {
@@ -170,36 +167,50 @@ const App: React.FC = () => {
     }
   }, [playerState]);
 
-  // --- ADSTERRA SCRIPT INJECTION ---
+  // --- SAFE BANNER INJECTION (Only the requested ad) ---
   useEffect(() => {
       if (showAds && adContainerRef.current) {
-          // Timer countdown
+          // Reset Timer
           setAdTimer(15);
           const timerInterval = setInterval(() => {
               setAdTimer(prev => prev > 0 ? prev - 1 : 0);
           }, 1000);
 
+          // Clear previous
           adContainerRef.current.innerHTML = '';
-
+          
+          // Create wrapper
           const adDiv = document.createElement('div');
-          adDiv.id = "container-19c1f4948dd443234ef09fb67ff9b5c5";
+          adDiv.style.overflow = "hidden";
+          adDiv.style.display = "flex";
+          adDiv.style.justifyContent = "center";
+          adDiv.style.alignItems = "center";
           adContainerRef.current.appendChild(adDiv);
 
-          const script1 = document.createElement('script');
-          script1.src = "https://pl28417823.effectivegatecpm.com/19c1f4948dd443234ef09fb67ff9b5c5/invoke.js";
-          script1.async = true;
-          script1.setAttribute('data-cfasync', 'false');
-          adContainerRef.current.appendChild(script1);
+          // Script 1: Config
+          const configScript = document.createElement('script');
+          configScript.type = 'text/javascript';
+          configScript.text = `
+              atOptions = {
+                  'key' : 'fb9f4466d526cca0ef371ffed97324dd',
+                  'format' : 'iframe',
+                  'height' : 90,
+                  'width' : 728,
+                  'params' : {}
+              };
+          `;
+          adDiv.appendChild(configScript);
 
-          const script2 = document.createElement('script');
-          script2.src = "https://pl28417816.effectivegatecpm.com/0f/00/cf/0f00cf8d31071e91267999001af02e64.js";
-          script2.async = true;
-          document.body.appendChild(script2); 
+          // Script 2: Invoke
+          const invokeScript = document.createElement('script');
+          invokeScript.type = 'text/javascript';
+          invokeScript.src = "https://www.highperformanceformat.com/fb9f4466d526cca0ef371ffed97324dd/invoke.js";
+          adDiv.appendChild(invokeScript);
 
           return () => {
               clearInterval(timerInterval);
-              if (document.body.contains(script2)) {
-                  document.body.removeChild(script2);
+              if (adContainerRef.current) {
+                  adContainerRef.current.innerHTML = '';
               }
           };
       }
@@ -232,7 +243,6 @@ const App: React.FC = () => {
   const handleItemClick = (id: number, type: 'movie' | 'tv' = 'movie') => { window.location.hash = `#/${type}/${id}`; };
 
   // --- PLAY LOGIC ---
-
   const startVideoPlayer = async (config: PlayerState) => {
     setIsPlayerLoading(true);
     setPlayerState(config);
@@ -270,10 +280,9 @@ const App: React.FC = () => {
     setTimeout(() => { setIsPlayerLoading(false); }, 1500);
   };
 
-  // Handler para avançar para o próximo episódio
   const handleNextEpisode = () => {
       if (playerState && nextEpisode) {
-          setIsPlayerLoading(true); // Show loading briefly for transition
+          setIsPlayerLoading(true);
           startVideoPlayer({
               ...playerState,
               season: nextEpisode.season,
@@ -332,17 +341,9 @@ const App: React.FC = () => {
   const isSearchActive = hash.startsWith('#/search/');
   const isLibraryActive = hash === '#/library';
 
-  // --- RENDER LOGIC ---
-
   if (loading) return null;
-
-  if (!session) {
-      return <Welcome onStart={handleStartApp} />;
-  }
-
-  if (!currentProfile) {
-      return <ProfileGateway onProfileSelect={handleProfileSelect} onLogout={handleLogout} />;
-  }
+  if (!session) return <Welcome onStart={handleStartApp} />;
+  if (!currentProfile) return <ProfileGateway onProfileSelect={handleProfileSelect} onLogout={handleLogout} />;
 
   return (
     <ProfileContext.Provider value={currentProfile}>
@@ -361,62 +362,55 @@ const App: React.FC = () => {
               </div>
               
               <div className="text-white mb-8 text-center animate-pulse z-40">
-                  <p className="text-2xl font-display font-bold mb-2">Apoie o StreamVerse</p>
-                  <p className="text-sm text-white/50">O vídeo começará após o anúncio.</p>
+                  <p className="text-2xl font-display font-bold mb-2 tracking-widest uppercase">Void Max</p>
+                  <p className="text-sm text-white/50">Carregando conteúdo...</p>
               </div>
               
               <div 
                 ref={adContainerRef} 
-                className="bg-white p-2 rounded-xl max-w-full overflow-hidden min-h-[250px] min-w-[300px] flex items-center justify-center shadow-2xl z-40 relative"
+                className="bg-transparent p-2 rounded-xl max-w-full overflow-hidden flex items-center justify-center z-40 relative min-w-[320px] min-h-[100px]"
               >
               </div>
           </div>
       )}
 
-      {/* IMMERSIVE NATIVE PLAYER OVERLAY */}
+      {/* PLAYER OVERLAY */}
       {playerState && !showAds && (
         <div className="fixed inset-0 z-[100] bg-black animate-fade-in flex flex-col overflow-hidden">
             {isPlayerLoading && (
                 <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm">
-                    <div className="w-16 h-16 border-4 border-white/20 border-t-primary rounded-full animate-spin mb-6"></div>
-                    <p className="text-white/60 font-display text-lg tracking-widest uppercase animate-pulse">Carregando...</p>
+                    <div className="w-16 h-16 border-4 border-white/10 border-t-white rounded-full animate-spin mb-6"></div>
                 </div>
             )}
             
-            {/* Player Controls Overlay */}
             <div className={`absolute inset-0 z-10 pointer-events-none transition-opacity duration-500 ${showPlayerControls ? 'opacity-100' : 'opacity-0'}`}>
-                
-                {/* Header Gradient */}
                 <div className="absolute top-0 left-0 w-full p-6 bg-gradient-to-b from-black/90 to-transparent pointer-events-auto">
                      <div className="flex items-center gap-4">
-                         <button onClick={closePlayer} className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center hover:bg-white/20 transition-all hover:scale-105 group">
-                            <span className="material-symbols-rounded text-white text-3xl group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
+                         <button onClick={closePlayer} className="w-12 h-12 rounded-full bg-white/5 backdrop-blur-md flex items-center justify-center hover:bg-white/10 transition-all border border-white/5">
+                            <span className="material-symbols-rounded text-white text-3xl">arrow_back</span>
                          </button>
                          <div>
                             <h2 className="text-white font-bold text-lg drop-shadow-md">
                                 {playerState.type === 'tv' ? `S${playerState.season}:E${playerState.episode}` : 'Reproduzindo'}
                             </h2>
-                            <span className="text-primary text-xs font-bold uppercase tracking-wider">
-                                StreamVerse Premium
+                            <span className="text-white/40 text-[10px] font-bold uppercase tracking-[0.2em]">
+                                VOID MAX
                             </span>
                          </div>
                      </div>
                 </div>
 
-                {/* Footer / Next Episode Button - MOVED HIGHER (bottom-24) to avoid seekbar */}
                 {nextEpisode && (
                     <div className="absolute bottom-24 right-8 pointer-events-auto animate-slide-up">
                         <button 
                             onClick={handleNextEpisode}
-                            className="bg-white text-black px-6 py-3 rounded-full font-bold font-display shadow-[0_0_25px_rgba(255,255,255,0.4)] flex items-center gap-3 hover:scale-105 active:scale-95 transition-all group"
+                            className="bg-white/10 backdrop-blur-md border border-white/10 text-white px-6 py-3 rounded-full font-bold shadow-2xl flex items-center gap-3 hover:bg-white/20 transition-all group"
                         >
                             <div className="flex flex-col items-start leading-none">
-                                <span className="text-[10px] uppercase font-bold text-black/60">Próximo</span>
+                                <span className="text-[10px] uppercase font-bold text-white/50">Próximo</span>
                                 <span className="text-base">{nextEpisode.title}</span>
                             </div>
-                            <div className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center group-hover:bg-primary transition-colors">
-                                <span className="material-symbols-rounded">skip_next</span>
-                            </div>
+                            <span className="material-symbols-rounded">skip_next</span>
                         </button>
                     </div>
                 )}
@@ -428,29 +422,25 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* HEADER */}
+      {/* NAVBAR */}
       {!isSearchActive && !isLibraryActive && !playerState && !showAds && (
         <nav id="navbar" className="fixed top-0 left-0 w-full z-40 transition-all duration-300 px-4 py-4 lg:px-8">
             <div className="max-w-7xl mx-auto flex items-center justify-between">
                 <div className="flex items-center gap-2 cursor-pointer group" onClick={handleGoHome}>
-                    <div className="text-primary flex items-center justify-center size-10 rounded-full bg-white/5 backdrop-blur-md border border-white/10 group-hover:bg-primary group-hover:text-white transition-all duration-300 shadow-[0_0_15px_rgba(242,13,242,0.3)]">
-                        <span className="material-symbols-rounded text-[24px]">movie_filter</span>
+                    <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center border border-white/10">
+                        <span className="material-symbols-rounded text-white text-lg">movie</span>
                     </div>
-                    <span className="font-display font-bold text-xl tracking-tight hidden md:block text-shadow-sm">StreamVerse</span>
+                    <span className="font-display font-bold text-xl tracking-[0.2em] text-white uppercase hidden md:block">Void Max</span>
                 </div>
                 
-                {/* Search Bar */}
-                <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 bg-black/40 backdrop-blur-md rounded-full border border-white/10 px-4 py-2.5 focus-within:bg-black/60 focus-within:border-primary/50 transition-all w-[160px] md:w-[300px] group shadow-inner">
-                    <span className="material-symbols-rounded text-white/50 text-xl group-focus-within:text-primary transition-colors">search</span>
-                    <input ref={searchInputRef} type="text" placeholder="Buscar filmes..." className="bg-transparent border-none outline-none text-sm text-white placeholder-white/40 w-full p-0 focus:ring-0" />
+                <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 bg-black/40 backdrop-blur-md rounded-full border border-white/10 px-4 py-2.5 w-[160px] md:w-[300px]">
+                    <span className="material-symbols-rounded text-white/30 text-xl">search</span>
+                    <input ref={searchInputRef} type="text" placeholder="Buscar..." className="bg-transparent border-none outline-none text-sm text-white placeholder-white/30 w-full p-0 focus:ring-0 font-light" />
                 </form>
 
                 <div className="flex items-center gap-3">
-                    <div className="hidden sm:flex flex-col items-end">
-                        <span className="text-xs font-bold text-white/90 uppercase tracking-wider">{currentProfile.name}</span>
-                    </div>
-                    <button onClick={() => setCurrentProfile(null)} className="w-10 h-10 rounded-full overflow-hidden border-2 border-white/20 hover:border-white transition-all hover:scale-105">
-                        <img src={currentProfile.avatar} className="w-full h-full object-cover" />
+                    <button onClick={() => setCurrentProfile(null)} className="w-9 h-9 rounded-full overflow-hidden border border-white/20 hover:border-white transition-all">
+                        <img src={currentProfile.avatar} className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-500" />
                     </button>
                 </div>
             </div>
@@ -462,25 +452,25 @@ const App: React.FC = () => {
 
       {/* MOBILE NAV */}
       {!playerState && !showAds && (
-        <div className="fixed bottom-0 left-0 w-full glass-dark pb-safe pt-2 px-6 z-50 rounded-t-2xl lg:hidden">
+        <div className="fixed bottom-0 left-0 w-full bg-black/90 backdrop-blur-xl border-t border-white/5 pb-safe pt-2 px-6 z-50 rounded-t-2xl lg:hidden">
             <div className="flex justify-between items-center pb-2">
-                <button onClick={handleGoHome} className={`flex flex-col items-center gap-1 group w-16 ${(hash === '#/' || !hash) ? 'text-primary' : 'text-white/50'}`}>
+                <button onClick={handleGoHome} className={`flex flex-col items-center gap-1 group w-16 ${(hash === '#/' || !hash) ? 'text-white' : 'text-white/30'}`}>
                     <span className="material-symbols-rounded text-2xl group-hover:-translate-y-1 transition-transform">home</span>
-                    <span className="text-[10px] font-medium">Início</span>
+                    <span className="text-[10px] font-medium tracking-wide">INÍCIO</span>
                 </button>
-                <button onClick={handleGoSearch} className={`flex flex-col items-center gap-1 group w-16 ${isSearchActive ? 'text-primary' : 'text-white/50'}`}>
+                <button onClick={handleGoSearch} className={`flex flex-col items-center gap-1 group w-16 ${isSearchActive ? 'text-white' : 'text-white/30'}`}>
                     <span className="material-symbols-rounded text-2xl group-hover:-translate-y-1 transition-transform">search</span>
-                    <span className="text-[10px] font-medium">Buscar</span>
+                    <span className="text-[10px] font-medium tracking-wide">BUSCAR</span>
                 </button>
-                <button onClick={handleGoLibrary} className={`flex flex-col items-center gap-1 group w-16 ${isLibraryActive ? 'text-primary' : 'text-white/50 hover:text-white'}`}>
-                    <span className={`material-symbols-rounded text-2xl group-hover:-translate-y-1 transition-transform ${isLibraryActive ? 'fill-1' : ''}`}>bookmarks</span>
-                    <span className="text-[10px] font-medium">Biblioteca</span>
+                <button onClick={handleGoLibrary} className={`flex flex-col items-center gap-1 group w-16 ${isLibraryActive ? 'text-white' : 'text-white/30'}`}>
+                    <span className="material-symbols-rounded text-2xl group-hover:-translate-y-1 transition-transform">bookmarks</span>
+                    <span className="text-[10px] font-medium tracking-wide">LISTA</span>
                 </button>
-                <button onClick={() => setCurrentProfile(null)} className="text-white/50 flex flex-col items-center gap-1 group hover:text-white transition-colors w-16">
-                    <div className="size-6 rounded-full overflow-hidden border-2 border-white/20 transition-colors">
-                        <img src={currentProfile.avatar} className="w-full h-full object-cover" alt="User" />
+                <button onClick={() => setCurrentProfile(null)} className="text-white/30 flex flex-col items-center gap-1 group hover:text-white transition-colors w-16">
+                    <div className="size-6 rounded-full overflow-hidden border border-white/20 transition-colors">
+                        <img src={currentProfile.avatar} className="w-full h-full object-cover grayscale" alt="User" />
                     </div>
-                    <span className="text-[10px] font-medium">Perfil</span>
+                    <span className="text-[10px] font-medium tracking-wide">PERFIL</span>
                 </button>
             </div>
         </div>

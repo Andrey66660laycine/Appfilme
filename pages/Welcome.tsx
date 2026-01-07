@@ -27,16 +27,16 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
   // Intro Slides
   const slides = useMemo(() => [
     {
-      title: <>Filmes e Séries <br/> <span className="text-primary">Ilimitados.</span></>,
-      desc: 'Assista onde quiser. Totalmente Grátis.'
+      title: <>Cinema <br/> <span className="text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">Redefinido.</span></>,
+      desc: 'Experiência premium de streaming. Sem limites.'
     },
     {
-      title: <>Baixe e assista <br/> <span className="text-primary">Offline.</span></>,
-      desc: 'Economize seus dados. Leve seus filmes para qualquer lugar.'
+      title: <>Download <br/> <span className="text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">Offline.</span></>,
+      desc: 'Leve sua biblioteca pessoal para qualquer lugar.'
     },
     {
-      title: <>Qualidade <br/> <span className="text-primary">4K Ultra HD.</span></>,
-      desc: 'Imersão total com áudio Dolby Atmos e HDR.'
+      title: <>Qualidade <br/> <span className="text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">IMAX Enhanced.</span></>,
+      desc: 'Imersão visual e sonora incomparável.'
     }
   ], []);
 
@@ -76,7 +76,7 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
     const list = [...posters, ...posters, ...posters, ...posters];
     const shifted = list.slice(offset).concat(list.slice(0, offset));
     return shifted.map((src, idx) => (
-        <img key={idx} src={src} className="rounded-lg w-full aspect-[2/3] object-cover opacity-60" alt="" loading="lazy"/>
+        <img key={idx} src={src} className="rounded-lg w-full aspect-[2/3] object-cover opacity-30 grayscale hover:grayscale-0 transition-all duration-700" alt="" loading="lazy"/>
     ));
   };
 
@@ -85,347 +85,215 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
     setTimeout(() => setToast({ show: false, msg: '' }), 4000);
   };
 
-  // Auth Handlers
   const handleAuth = async (e: FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
     try {
         if (view === 'login') {
-            const { error } = await supabase.auth.signInWithPassword({
-                email,
-                password,
-            });
+            const { error } = await supabase.auth.signInWithPassword({ email, password });
             if (error) {
                 if (error.message.includes("Email not confirmed")) {
-                    throw new Error("Por favor, verifique seu e-mail para confirmar a conta antes de entrar.");
+                    throw new Error("Por favor, verifique seu e-mail.");
                 }
                 throw error;
             }
-            showToast("Bem-vindo de volta!");
+            showToast("Iniciando Void Max...");
             onStart();
         } else if (view === 'register') {
             const { data, error } = await supabase.auth.signUp({
                 email,
                 password,
-                options: {
-                    data: { full_name: name }
-                }
+                options: { data: { full_name: name } }
             });
             if (error) throw error;
-            
-            if (data.user && data.user.identities && data.user.identities.length === 0) {
-                 showToast("Esta conta já existe. Tente fazer login.");
+            if (data.user?.identities?.length === 0) {
+                 showToast("Conta já existe.");
                  setView('login');
             } else {
-                 showToast("Conta criada! Enviamos um link de confirmação para o seu e-mail.");
-                 // Switch to login view immediately
+                 showToast("Link enviado para seu e-mail.");
                  setView('login');
-                 setEmail(email); // Keep email filled
-                 setPassword('');
+                 setEmail(email); setPassword('');
             }
         } else if (view === 'forgot') {
-            const { error } = await supabase.auth.resetPasswordForEmail(email, {
-                redirectTo: window.location.origin + '#/reset-password', // Garante redirecionamento correto
-            });
+            const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + '#/reset-password' });
             if (error) throw error;
-            showToast("Email de recuperação enviado! Verifique sua caixa de entrada.");
+            showToast("Link de recuperação enviado.");
             setView('login');
         }
     } catch (error: any) {
-        showToast(error.message || "Ocorreu um erro. Tente novamente.");
+        showToast(error.message || "Erro de conexão.");
     } finally {
         setIsLoading(false);
     }
   };
 
   return (
-    <div className="bg-background-dark font-body text-white antialiased overflow-hidden h-screen w-screen relative selection:bg-primary selection:text-white">
+    <div className="bg-black font-body text-white antialiased overflow-hidden h-screen w-screen relative selection:bg-white selection:text-black">
       
-      {/* INJECTED STYLES FOR AUTH UI */}
       <style>{`
         .glass-card {
-            background: rgba(10, 10, 10, 0.65);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+            background: rgba(5, 5, 5, 0.8);
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 40px 80px -20px rgba(0, 0, 0, 1);
         }
-        .input-group:focus-within {
-            border-color: #f20df2;
-            box-shadow: 0 0 15px rgba(242, 13, 242, 0.2);
-            background: rgba(242, 13, 242, 0.05);
+        .input-minimal {
+            background: transparent;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
         }
-        .form-view {
-            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        .input-minimal:focus-within {
+            border-color: #fff;
         }
       `}</style>
 
       {/* BACKGROUND */}
-      <div className={`absolute inset-0 overflow-hidden transition-opacity duration-1000 ${view === 'intro' ? 'opacity-40' : 'opacity-20'}`}>
-          <div className="w-[150%] grid grid-cols-3 gap-3 animate-scroll-diagonal grayscale-[30%]">
-              <div className="flex flex-col gap-3">{renderColumn(0)}</div>
-              <div className="flex flex-col gap-3 -mt-32">{renderColumn(5)}</div>
-              <div className="flex flex-col gap-3">{renderColumn(10)}</div>
+      <div className={`absolute inset-0 overflow-hidden transition-opacity duration-1000 ${view === 'intro' ? 'opacity-30' : 'opacity-10'}`}>
+          <div className="w-[150%] grid grid-cols-3 gap-4 animate-scroll-diagonal">
+              <div className="flex flex-col gap-4">{renderColumn(0)}</div>
+              <div className="flex flex-col gap-4 -mt-32">{renderColumn(5)}</div>
+              <div className="flex flex-col gap-4">{renderColumn(10)}</div>
           </div>
       </div>
 
-      <div className="absolute inset-0 bg-gradient-to-t from-background-dark via-background-dark/90 to-black/40 z-10 pointer-events-none"></div>
+      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/95 to-black/20 z-10 pointer-events-none"></div>
 
       {/* TOAST */}
-      <div className={`fixed top-10 left-1/2 -translate-x-1/2 z-[100] bg-black/80 backdrop-blur-xl border border-white/10 px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 transition-all duration-500 w-max max-w-[90vw] ${toast.show ? 'translate-y-0 opacity-100' : '-translate-y-20 opacity-0'}`}>
-        <span className="material-symbols-rounded text-primary">info</span>
-        <span className="text-sm font-medium">{toast.msg}</span>
+      <div className={`fixed top-10 left-1/2 -translate-x-1/2 z-[100] bg-white text-black px-6 py-3 rounded-full shadow-[0_0_30px_rgba(255,255,255,0.2)] flex items-center gap-3 transition-all duration-500 w-max ${toast.show ? 'translate-y-0 opacity-100' : '-translate-y-10 opacity-0'}`}>
+        <span className="material-symbols-rounded">info</span>
+        <span className="text-xs font-bold tracking-wider uppercase">{toast.msg}</span>
       </div>
 
-      {/* CONTENT */}
-      <div className="relative z-20 h-full flex flex-col items-center justify-center px-4 w-full">
+      <div className="relative z-20 h-full flex flex-col items-center justify-center px-6 w-full">
           
+          {/* BRAND LOGO */}
+          <div className="absolute top-8 left-0 w-full flex justify-center pointer-events-none">
+              <div className="flex flex-col items-center gap-1">
+                 <span className="font-display font-bold text-3xl tracking-[0.3em] text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-500">VOID</span>
+                 <span className="text-[8px] font-light tracking-[0.6em] text-white/30 uppercase">Cinematic Experience</span>
+              </div>
+          </div>
+
           {/* INTRO */}
           {view === 'intro' && (
-             <div className="flex flex-col h-full justify-between pb-12 pt-10 w-full max-w-lg mx-auto animate-fade-in">
-                <div className="flex justify-center">
-                    <div className="flex items-center gap-2">
-                        <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shadow-[0_0_15px_#f20df2]">
-                            <span className="material-symbols-rounded text-white text-2xl">movie_filter</span>
-                        </div>
-                        <span className="font-display font-bold text-2xl tracking-tight text-white">StreamVerse</span>
+             <div className="flex flex-col items-center text-center w-full max-w-lg animate-fade-in mt-10">
+                <div className="h-40 flex flex-col justify-end mb-12">
+                    <div key={fadeKey} className="animate-text-slide">
+                        <h1 className="font-display text-5xl md:text-6xl font-bold text-white mb-4 leading-tight">
+                            {slides[currentSlide].title}
+                        </h1>
+                        <p className="text-white/40 text-sm md:text-base font-light tracking-wide max-w-sm mx-auto">
+                            {slides[currentSlide].desc}
+                        </p>
                     </div>
                 </div>
 
-                <div className="flex flex-col items-center text-center w-full">
-                    <div className="h-32 flex flex-col justify-end mb-8">
-                        <div key={fadeKey} className="animate-text-slide">
-                            <h1 className="font-display text-4xl md:text-5xl font-bold text-white mb-2 leading-tight">
-                                {slides[currentSlide].title}
-                            </h1>
-                            <p className="text-white/60 text-base md:text-lg">
-                                {slides[currentSlide].desc}
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="flex gap-2 mb-8">
-                        {slides.map((_, idx) => (
-                            <div key={idx} className={`h-1.5 rounded-full transition-all duration-300 ${currentSlide === idx ? 'w-8 bg-primary' : 'w-2 bg-white/20'}`}></div>
-                        ))}
-                    </div>
-
-                    <div className="w-full space-y-4">
-                        <button 
-                            onClick={() => setView('login')}
-                            className="w-full bg-primary hover:bg-primary-hover text-white font-display font-bold text-lg py-4 rounded-xl shadow-[0_0_20px_rgba(242,13,242,0.5)] animate-pulse-glow transition-all active:scale-[0.98] flex items-center justify-center gap-2 group"
-                        >
-                            Começar Agora
-                            <span className="material-symbols-rounded group-hover:translate-x-1 transition-transform">arrow_forward</span>
-                        </button>
-                        
-                        <button 
-                            onClick={() => setView('login')} 
-                            className="w-full bg-white/5 border border-white/10 backdrop-blur-md text-white font-medium text-lg py-4 rounded-xl hover:bg-white/10 transition-all active:scale-[0.98]"
-                        >
-                            Já tenho uma conta
-                        </button>
-                    </div>
-
-                    <p className="text-xs text-white/30 mt-8">
-                        Ao entrar, você concorda com nossos <a href="#" className="underline hover:text-white">Termos</a>.
-                    </p>
+                <div className="flex gap-2 mb-12">
+                    {slides.map((_, idx) => (
+                        <div key={idx} className={`h-0.5 transition-all duration-500 ${currentSlide === idx ? 'w-12 bg-white' : 'w-4 bg-white/20'}`}></div>
+                    ))}
                 </div>
+
+                <button 
+                    onClick={() => setView('login')}
+                    className="w-full bg-white text-black font-display font-bold text-sm tracking-widest uppercase py-5 rounded-full hover:bg-gray-200 transition-all active:scale-[0.98] shadow-[0_0_30px_rgba(255,255,255,0.1)] hover:shadow-[0_0_40px_rgba(255,255,255,0.3)] mb-4"
+                >
+                    Entrar no Void
+                </button>
+                
+                <p className="text-[10px] text-white/20 uppercase tracking-widest mt-4">
+                    Privacidade • Termos • Suporte
+                </p>
              </div>
           )}
 
           {/* FORMS */}
           {view !== 'intro' && (
-             <div className="w-full max-w-[420px] animate-slide-up">
-                
-                <div className="flex justify-center mb-8">
-                    <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('intro')}>
-                        <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shadow-[0_0_20px_#f20df2]">
-                            <span className="material-symbols-rounded text-white text-2xl">movie_filter</span>
-                        </div>
-                        <h1 className="font-display font-bold text-2xl tracking-tight text-white drop-shadow-lg">StreamVerse</h1>
-                    </div>
-                </div>
-
-                <div className="glass-card rounded-3xl p-8 w-full overflow-hidden relative min-h-[450px]">
+             <div className="w-full max-w-[400px] animate-slide-up">
+                <div className="glass-card rounded-2xl p-10 w-full relative">
                     
-                    {/* LOGIN FORM */}
+                    {/* LOGIN */}
                     {view === 'login' && (
                         <div className="animate-fade-in">
-                            <h2 className="text-2xl font-display font-bold text-white mb-2">Bem-vindo</h2>
-                            <p className="text-white/50 text-sm mb-8">Digite suas credenciais para acessar.</p>
+                            <h2 className="text-xl font-display font-bold text-white mb-1 tracking-wide">Bem-vindo de volta</h2>
+                            <p className="text-white/30 text-xs mb-8">Acesse sua conta Void Max.</p>
                             
-                            <form onSubmit={handleAuth} className="space-y-5">
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-white/70 ml-1 uppercase tracking-wider">Email</label>
-                                    <div className="input-group flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3 transition-all duration-300">
-                                        <span className="material-symbols-rounded text-white/40 text-xl mr-3">mail</span>
-                                        <input 
-                                            type="email" 
-                                            value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
-                                            placeholder="exemplo@email.com" 
-                                            className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" 
-                                            required 
-                                        />
-                                    </div>
+                            <form onSubmit={handleAuth} className="space-y-6">
+                                <div className="input-minimal pb-2">
+                                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" required />
+                                </div>
+                                <div className="input-minimal pb-2 flex justify-between gap-2">
+                                    <input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Senha" className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" required />
+                                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="text-white/30 hover:text-white transition-colors">
+                                        <span className="material-symbols-rounded text-lg">{showPassword ? 'visibility_off' : 'visibility'}</span>
+                                    </button>
                                 </div>
 
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-white/70 ml-1 uppercase tracking-wider">Senha</label>
-                                    <div className="input-group flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3 transition-all duration-300">
-                                        <span className="material-symbols-rounded text-white/40 text-xl mr-3">lock</span>
-                                        <input 
-                                            type={showPassword ? "text" : "password"} 
-                                            value={password}
-                                            onChange={(e) => setPassword(e.target.value)}
-                                            placeholder="••••••••" 
-                                            className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" 
-                                            required 
-                                        />
-                                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="text-white/40 hover:text-white transition-colors">
-                                            <span className="material-symbols-rounded text-xl">{showPassword ? 'visibility_off' : 'visibility'}</span>
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div className="flex justify-end">
-                                    <button type="button" onClick={() => setView('forgot')} className="text-xs text-white/50 hover:text-white transition-colors">Esqueceu a senha?</button>
-                                </div>
-
-                                <button type="submit" disabled={isLoading} className="w-full bg-primary hover:bg-primary-hover text-white font-bold py-3.5 rounded-xl shadow-[0_0_20px_rgba(242,13,242,0.4)] hover:shadow-[0_0_30px_rgba(242,13,242,0.6)] transition-all active:scale-[0.98] flex items-center justify-center gap-2 relative overflow-hidden group">
-                                    {isLoading ? (
-                                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                                    ) : (
-                                        <span>Entrar</span>
-                                    )}
+                                <button type="submit" disabled={isLoading} className="w-full bg-white text-black font-bold text-xs uppercase tracking-widest py-4 rounded-lg hover:bg-gray-200 transition-all mt-4">
+                                    {isLoading ? '...' : 'Acessar'}
                                 </button>
                             </form>
 
-                            <div className="mt-8 text-center">
-                                <p className="text-sm text-white/50">
-                                    Novo por aqui? 
-                                    <button onClick={() => setView('register')} className="text-primary font-bold hover:underline ml-1">Crie sua conta</button>
-                                </p>
+                            <div className="mt-6 flex justify-between items-center text-xs text-white/40">
+                                <button onClick={() => setView('register')} className="hover:text-white transition-colors">Criar conta</button>
+                                <button onClick={() => setView('forgot')} className="hover:text-white transition-colors">Recuperar senha</button>
                             </div>
                         </div>
                     )}
 
-                    {/* REGISTER FORM */}
+                    {/* REGISTER */}
                     {view === 'register' && (
                         <div className="animate-fade-in">
-                            <h2 className="text-2xl font-display font-bold text-white mb-2">Criar Conta</h2>
-                            <p className="text-white/50 text-sm mb-6">Confirme o e-mail após o cadastro.</p>
+                            <h2 className="text-xl font-display font-bold text-white mb-1 tracking-wide">Novo Acesso</h2>
+                            <p className="text-white/30 text-xs mb-8">Junte-se ao Void Max.</p>
                             
-                            <form onSubmit={handleAuth} className="space-y-4">
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-white/70 ml-1 uppercase tracking-wider">Nome</label>
-                                    <div className="input-group flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3 transition-all duration-300">
-                                        <span className="material-symbols-rounded text-white/40 text-xl mr-3">person</span>
-                                        <input 
-                                            type="text" 
-                                            value={name}
-                                            onChange={(e) => setName(e.target.value)}
-                                            placeholder="Seu nome" 
-                                            className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" 
-                                            required 
-                                        />
-                                    </div>
+                            <form onSubmit={handleAuth} className="space-y-6">
+                                <div className="input-minimal pb-2">
+                                    <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome" className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" required />
+                                </div>
+                                <div className="input-minimal pb-2">
+                                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" required />
+                                </div>
+                                <div className="input-minimal pb-2">
+                                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Senha" className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" required />
                                 </div>
 
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-white/70 ml-1 uppercase tracking-wider">Email</label>
-                                    <div className="input-group flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3 transition-all duration-300">
-                                        <span className="material-symbols-rounded text-white/40 text-xl mr-3">mail</span>
-                                        <input 
-                                            type="email" 
-                                            value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
-                                            placeholder="exemplo@email.com" 
-                                            className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" 
-                                            required 
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-white/70 ml-1 uppercase tracking-wider">Senha</label>
-                                    <div className="input-group flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3 transition-all duration-300">
-                                        <span className="material-symbols-rounded text-white/40 text-xl mr-3">lock</span>
-                                        <input 
-                                            type={showPassword ? "text" : "password"} 
-                                            value={password}
-                                            onChange={(e) => setPassword(e.target.value)}
-                                            placeholder="Crie uma senha" 
-                                            className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" 
-                                            required 
-                                        />
-                                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="text-white/40 hover:text-white transition-colors">
-                                            <span className="material-symbols-rounded text-xl">{showPassword ? 'visibility_off' : 'visibility'}</span>
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <button type="submit" disabled={isLoading} className="w-full bg-white text-black font-bold py-3.5 rounded-xl hover:bg-gray-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-2">
-                                    {isLoading ? (
-                                        <div className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin"></div>
-                                    ) : (
-                                        <span>Cadastrar</span>
-                                    )}
+                                <button type="submit" disabled={isLoading} className="w-full bg-white text-black font-bold text-xs uppercase tracking-widest py-4 rounded-lg hover:bg-gray-200 transition-all mt-4">
+                                    {isLoading ? '...' : 'Registrar'}
                                 </button>
                             </form>
-
-                            <div className="mt-8 text-center">
-                                <p className="text-sm text-white/50">
-                                    Já tem uma conta? 
-                                    <button onClick={() => setView('login')} className="text-primary font-bold hover:underline ml-1">Entrar</button>
-                                </p>
+                            <div className="mt-6 text-center">
+                                <button onClick={() => setView('login')} className="text-xs text-white/40 hover:text-white transition-colors">Voltar para login</button>
                             </div>
                         </div>
                     )}
 
-                    {/* FORGOT PASSWORD FORM */}
+                    {/* FORGOT */}
                     {view === 'forgot' && (
                         <div className="animate-fade-in">
-                            <button onClick={() => setView('login')} className="mb-6 flex items-center gap-2 text-white/50 hover:text-white transition-colors text-sm">
-                                <span className="material-symbols-rounded text-lg">arrow_back</span>
-                                Voltar
-                            </button>
-
-                            <h2 className="text-2xl font-display font-bold text-white mb-2">Recuperar Conta</h2>
-                            <p className="text-white/50 text-sm mb-8">Enviaremos um link de redefinição para o seu e-mail.</p>
+                            <h2 className="text-xl font-display font-bold text-white mb-1 tracking-wide">Recuperação</h2>
+                            <p className="text-white/30 text-xs mb-8">Digite seu e-mail cadastrado.</p>
                             
-                            <form onSubmit={handleAuth} className="space-y-5">
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-white/70 ml-1 uppercase tracking-wider">Email Cadastrado</label>
-                                    <div className="input-group flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3 transition-all duration-300">
-                                        <span className="material-symbols-rounded text-white/40 text-xl mr-3">mail</span>
-                                        <input 
-                                            type="email" 
-                                            value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
-                                            placeholder="exemplo@email.com" 
-                                            className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" 
-                                            required 
-                                        />
-                                    </div>
+                            <form onSubmit={handleAuth} className="space-y-6">
+                                <div className="input-minimal pb-2">
+                                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" required />
                                 </div>
-
-                                <button type="submit" disabled={isLoading} className="w-full bg-primary hover:bg-primary-hover text-white font-bold py-3.5 rounded-xl shadow-[0_0_20px_rgba(242,13,242,0.4)] hover:shadow-[0_0_30px_rgba(242,13,242,0.6)] transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-4 relative overflow-hidden">
-                                    {isLoading ? (
-                                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                                    ) : (
-                                        <>
-                                            <span className="material-symbols-rounded">send</span>
-                                            <span>Enviar Link</span>
-                                        </>
-                                    )}
+                                <button type="submit" disabled={isLoading} className="w-full bg-white text-black font-bold text-xs uppercase tracking-widest py-4 rounded-lg hover:bg-gray-200 transition-all mt-4">
+                                    {isLoading ? '...' : 'Enviar Link'}
                                 </button>
                             </form>
+                            <div className="mt-6 text-center">
+                                <button onClick={() => setView('login')} className="text-xs text-white/40 hover:text-white transition-colors">Voltar</button>
+                            </div>
                         </div>
                     )}
-
+                </div>
+                <div className="mt-6 flex justify-center">
+                     <button onClick={() => setView('intro')} className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-white/30 hover:text-white hover:border-white transition-all">
+                        <span className="material-symbols-rounded">close</span>
+                     </button>
                 </div>
              </div>
           )}

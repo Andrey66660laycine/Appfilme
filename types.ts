@@ -95,3 +95,9 @@ export interface Profile {
   total_movies_watched: number;
   total_episodes_watched: number;
 }
+
+declare global {
+  interface Window {
+    onVideoDetected: (url: string) => void;
+  }
+}

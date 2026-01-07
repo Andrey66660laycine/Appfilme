@@ -189,11 +189,21 @@ export const storageService = {
   addToHistory: async (profileId: string, item: WatchHistoryItem) => {
     try {
       const user = await getUser();
-      if (!user) {
-          return;
-      }
-      if (!profileId) return;
+      if (!user || !profileId) return;
 
+      // 1. VERIFICAR SE JÁ EXISTE NO HISTÓRICO
+      // Se existir, nós NÃO incrementamos a contagem de filmes/episódios, apenas atualizamos o tempo.
+      const { data: existingItem, error: fetchError } = await supabase
+        .from('watch_history')
+        .select('id')
+        .eq('profile_id', profileId)
+        .eq('tmdb_id', item.id)
+        .eq('type', item.type)
+        .maybeSingle();
+
+      const isNewEntry = !existingItem;
+
+      // 2. SALVAR NO HISTÓRICO (Upsert atualiza o created_at/timestamp se já existir)
       const { error } = await supabase
         .from('watch_history')
         .upsert({
@@ -211,11 +221,14 @@ export const storageService = {
         }, { onConflict: 'profile_id,tmdb_id,type' });
 
       if (!error) {
-          // Atualiza estatísticas do perfil
-          const isMovie = item.type === 'movie';
-          // Se for filme, adiciona 1 filme. Se for série, adiciona 1 episódio.
-          // Não adicionamos tempo aqui (0), o tempo é adicionado pelo cronômetro em App.tsx
-          await storageService.updateWatchStats(profileId, 0, isMovie ? 1 : 0, isMovie ? 0 : 1);
+          // 3. ATUALIZAR ESTATÍSTICAS APENAS SE FOR NOVO
+          if (isNewEntry) {
+              const isMovie = item.type === 'movie';
+              await storageService.updateWatchStats(profileId, 0, isMovie ? 1 : 0, isMovie ? 0 : 1);
+              console.log("Stats incremented for new entry:", item.title);
+          } else {
+              console.log("Entry exists, stats skipped for:", item.title);
+          }
       } else {
           console.error("Erro Supabase History Insert:", error.message);
       }

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, FormEvent } from 'react';
 import { tmdb } from '../services/tmdbService';
 import { supabase } from '../services/supabase';
@@ -24,19 +23,19 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
 
-  // Intro Slides
+  // Intro Slides (Atualizado para ser mais realista sobre as funcionalidades do app)
   const slides = useMemo(() => [
     {
-      title: <>Cinema <br/> <span className="text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">Redefinido.</span></>,
-      desc: 'Experiência premium de streaming. Sem limites.'
+      title: <>Universo <br/> <span className="text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">Cinematográfico.</span></>,
+      desc: 'Explore milhares de filmes e séries em um só lugar. Catálogo sempre atualizado.'
     },
     {
-      title: <>Download <br/> <span className="text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">Offline.</span></>,
-      desc: 'Leve sua biblioteca pessoal para qualquer lugar.'
+      title: <>Sua Lista <br/> <span className="text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">Pessoal.</span></>,
+      desc: 'Organize o que você quer assistir e acompanhe o progresso das suas séries.'
     },
     {
-      title: <>Qualidade <br/> <span className="text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">IMAX Enhanced.</span></>,
-      desc: 'Imersão visual e sonora incomparável.'
+      title: <>Descubra <br/> <span className="text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">Novas Histórias.</span></>,
+      desc: 'Recomendações inteligentes baseadas no que você gosta de assistir.'
     }
   ], []);
 

@@ -7,6 +7,7 @@ import TVDetails from './pages/TVDetails';
 import Welcome from './pages/Welcome';
 import Library from './pages/Library';
 import ProfileGateway from './pages/ProfileGateway';
+import CustomVideoPlayer from './components/CustomVideoPlayer';
 import { tmdb } from './services/tmdbService';
 import { storageService } from './services/storageService';
 import { supabase } from './services/supabase';
@@ -37,6 +38,7 @@ const App: React.FC = () => {
   
   // Player States
   const [playerState, setPlayerState] = useState<PlayerState | null>(null);
+  const [nativeVideoUrl, setNativeVideoUrl] = useState<string | null>(null);
   const [showPlayerControls, setShowPlayerControls] = useState(true);
   const [isPlayerLoading, setIsPlayerLoading] = useState(false);
   const [nextEpisode, setNextEpisode] = useState<NextEpisodeInfo | null>(null);
@@ -63,6 +65,15 @@ const App: React.FC = () => {
     });
 
     return () => subscription.unsubscribe();
+  }, []);
+
+  // --- GLOBAL VIDEO DETECTION LISTENER (Android Interop) ---
+  useEffect(() => {
+    window.onVideoDetected = (url: string) => {
+        console.log("Native Video Detected:", url);
+        setNativeVideoUrl(url);
+        setIsPlayerLoading(false); // Stop loading spinner if embed was loading
+    };
   }, []);
 
   // --- ROUTING ---
@@ -247,6 +258,7 @@ const App: React.FC = () => {
     setIsPlayerLoading(true);
     setPlayerState(config);
     setPendingPlayerState(null);
+    setNativeVideoUrl(null); // Reset native url on new play
 
     try {
         if (!currentProfile) return;
@@ -261,6 +273,7 @@ const App: React.FC = () => {
         }
 
         if (details) {
+            // addToHistory now handles the duplication check internally (stats fix)
             await storageService.addToHistory(currentProfile.id, {
                 id: details.id,
                 type: config.type,
@@ -277,7 +290,8 @@ const App: React.FC = () => {
         console.error("Failed to save history", e);
     }
     
-    setTimeout(() => { setIsPlayerLoading(false); }, 1500);
+    // Fallback if native url doesn't arrive quickly, we keep loading until iframe or detection
+    // But typically iframe loads immediately.
   };
 
   const handleNextEpisode = () => {
@@ -304,7 +318,10 @@ const App: React.FC = () => {
       }
   };
 
-  const closePlayer = () => { setPlayerState(null); };
+  const closePlayer = () => { 
+      setPlayerState(null); 
+      setNativeVideoUrl(null);
+  };
 
   const getPlayerUrl = () => {
     if (!playerState) return '';
@@ -314,6 +331,12 @@ const App: React.FC = () => {
       return `https://playerflixapi.com/serie/${playerState.id}/${playerState.season}/${playerState.episode}`;
     }
   };
+
+  const getPlayerTitle = () => {
+      if (!playerState) return 'Void Max';
+      if (playerState.type === 'tv') return `S${playerState.season}:E${playerState.episode}`;
+      return 'Filme';
+  }
 
   // --- RENDER CONTENT ---
   const renderContent = () => {
@@ -374,15 +397,26 @@ const App: React.FC = () => {
           </div>
       )}
 
-      {/* PLAYER OVERLAY */}
-      {playerState && !showAds && (
+      {/* CUSTOM NATIVE PLAYER (WHEN URL DETECTED) */}
+      {nativeVideoUrl && playerState && !showAds && (
+          <CustomVideoPlayer 
+              src={nativeVideoUrl} 
+              onClose={closePlayer} 
+              title={getPlayerTitle()}
+          />
+      )}
+
+      {/* FALLBACK IFRAME PLAYER (HIDDEN IF NATIVE DETECTED) */}
+      {playerState && !showAds && !nativeVideoUrl && (
         <div className="fixed inset-0 z-[100] bg-black animate-fade-in flex flex-col overflow-hidden">
             {isPlayerLoading && (
                 <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm">
                     <div className="w-16 h-16 border-4 border-white/10 border-t-white rounded-full animate-spin mb-6"></div>
+                    <p className="text-white/50 animate-pulse">Carregando Stream...</p>
                 </div>
             )}
             
+            {/* EMBED CONTROLS (Only visible before native detection if needed, or if detection fails) */}
             <div className={`absolute inset-0 z-10 pointer-events-none transition-opacity duration-500 ${showPlayerControls ? 'opacity-100' : 'opacity-0'}`}>
                 <div className="absolute top-0 left-0 w-full p-6 bg-gradient-to-b from-black/90 to-transparent pointer-events-auto">
                      <div className="flex items-center gap-4">
@@ -417,7 +451,21 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex-1 w-full h-full relative bg-black">
-                 <iframe src={getPlayerUrl()} width="100%" height="100%" frameBorder="0" allowFullScreen className="w-full h-full object-cover" title="Player" allow="autoplay; encrypted-media; fullscreen; picture-in-picture"></iframe>
+                 {/* 
+                    NOTE: The Android app detects the video URL from this iframe.
+                    When 'onVideoDetected' fires, 'nativeVideoUrl' becomes true,
+                    and this entire div is replaced by CustomVideoPlayer above.
+                 */}
+                 <iframe 
+                    src={getPlayerUrl()} 
+                    width="100%" 
+                    height="100%" 
+                    frameBorder="0" 
+                    allowFullScreen 
+                    className="w-full h-full object-cover" 
+                    title="Player" 
+                    allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                 ></iframe>
             </div>
         </div>
       )}

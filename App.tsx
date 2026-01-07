@@ -188,10 +188,17 @@ const App: React.FC = () => {
             window.removeEventListener('mousemove', resetControls);
             window.removeEventListener('touchstart', resetControls);
             if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-            if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
+            // CRITICAL FIX: Do NOT clear loaderTimeoutRef here. 
+            // Updating playerState (e.g. adding title) triggers this cleanup, killing the loader timer.
+            // The loader timer should only be cleared when closing the player or manually by startVideoPlayer.
         };
     } else {
         setNextEpisode(null);
+        // Clean up loader if player is closed completely
+        if (loaderTimeoutRef.current) {
+            clearTimeout(loaderTimeoutRef.current);
+            loaderTimeoutRef.current = null;
+        }
     }
   }, [playerState]);
 

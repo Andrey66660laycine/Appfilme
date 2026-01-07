@@ -10,7 +10,7 @@ const AppDownloadModal: React.FC<AppDownloadModalProps> = ({ onClose }) => {
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   // Default fallback link if supabase fails or is empty
-  const [downloadUrl, setDownloadUrl] = useState('https://www.mediafire.com/file/3gkp4b2nzd2qvmr/Void+Max_1.0.apk/file');
+  const [downloadUrl, setDownloadUrl] = useState('https://github.com/Andrey66660laycine/Appfilme/raw/refs/heads/main/Void%20Max_1.0%20(1).apk');
 
   useEffect(() => {
       const fetchDynamicLink = async () => {

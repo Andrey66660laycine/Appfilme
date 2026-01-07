@@ -1,5 +1,6 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { storageService } from '../services/storageService';
 
 interface AppDownloadModalProps {
   onClose: (dontShowAgain: boolean) => void;
@@ -8,9 +9,22 @@ interface AppDownloadModalProps {
 const AppDownloadModal: React.FC<AppDownloadModalProps> = ({ onClose }) => {
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  // Default fallback link if supabase fails or is empty
+  const [downloadUrl, setDownloadUrl] = useState('https://www.mediafire.com/file/3gkp4b2nzd2qvmr/Void+Max_1.0.apk/file');
+
+  useEffect(() => {
+      const fetchDynamicLink = async () => {
+          // Busca a chave 'android_download_link' na tabela 'app_config'
+          const link = await storageService.getAppConfig('android_download_link');
+          if (link && link.startsWith('http')) {
+              setDownloadUrl(link);
+          }
+      };
+      fetchDynamicLink();
+  }, []);
 
   const handleDownload = () => {
-    window.open('https://www.mediafire.com/file/3gkp4b2nzd2qvmr/Void+Max_1.0.apk/file', '_blank');
+    window.open(downloadUrl, '_blank');
     handleClose();
   };
 

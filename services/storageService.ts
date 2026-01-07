@@ -10,6 +10,24 @@ const getUser = async () => {
 
 export const storageService = {
   
+  // --- CONFIG GERAL (LINK DOWNLOAD, AVISOS, ETC) ---
+  getAppConfig: async (key: string): Promise<string | null> => {
+      try {
+        // Tenta buscar da tabela 'app_config' se existir
+        // Estrutura esperada: tabela 'app_config' com colunas 'key' e 'value'
+        const { data, error } = await supabase
+            .from('app_config')
+            .select('value')
+            .eq('key', key)
+            .maybeSingle();
+
+        if (error || !data) return null;
+        return data.value;
+      } catch (e) {
+          return null; // Retorna null para usar o fallback local
+      }
+  },
+
   // --- PROFILES ---
   
   getProfiles: async (): Promise<Profile[]> => {

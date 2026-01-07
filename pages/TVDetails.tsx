@@ -21,6 +21,8 @@ const TVDetails: React.FC<TVDetailsProps> = ({ id, onPlay }) => {
   const [activeTab, setActiveTab] = useState<'episodes' | 'related' | 'details'>('episodes');
   const [selectedSeason, setSelectedSeason] = useState(1);
   const [isSeasonMenuOpen, setIsSeasonMenuOpen] = useState(false);
+  const [trailerKey, setTrailerKey] = useState<string | null>(null);
+  const [showTrailerModal, setShowTrailerModal] = useState(false);
   
   const [inList, setInList] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -36,14 +38,19 @@ const TVDetails: React.FC<TVDetailsProps> = ({ id, onPlay }) => {
     const fetchSeriesData = async () => {
       try {
         setLoading(true);
-        const [details, recommendations] = await Promise.all([
+        const [details, recommendations, videosData] = await Promise.all([
              tmdb.getTVDetails(id),
-             tmdb.getRecommendations(id, 'tv')
+             tmdb.getRecommendations(id, 'tv'),
+             tmdb.getVideos(id, 'tv')
         ]);
 
         if (details) {
           setSeries(details);
           setRelated(recommendations);
+
+           // Find trailer
+          const trailer = videosData.find((v: any) => v.type === "Trailer" && v.site === "YouTube") || videosData.find((v: any) => v.site === "YouTube");
+          if (trailer) setTrailerKey(trailer.key);
           
           if (currentProfile) {
             const exists = await storageService.isInLibrary(currentProfile.id, details.id, 'tv');
@@ -95,6 +102,34 @@ const TVDetails: React.FC<TVDetailsProps> = ({ id, onPlay }) => {
   const showToast = (icon: string, message: string) => {
     setToast({ visible: true, message, icon });
     setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
+  };
+
+  const handleShare = async () => {
+    if (!series) return;
+    const shareData = {
+        title: `Void Max - Assista ${series.name}`,
+        text: `Estou assistindo a série ${series.name} no Void Max.`,
+        url: window.location.href
+    };
+
+    if (navigator.share) {
+        try {
+            await navigator.share(shareData);
+        } catch (err) {
+            console.log('Share dismissed');
+        }
+    } else {
+        navigator.clipboard.writeText(window.location.href);
+        showToast('link', 'Link copiado!');
+    }
+  };
+
+  const handleWatchTrailer = () => {
+      if (trailerKey) {
+          setShowTrailerModal(true);
+      } else {
+          showToast('videocam_off', 'Trailer indisponível no momento');
+      }
   };
 
   const toggleMyList = async () => {
@@ -167,6 +202,29 @@ const TVDetails: React.FC<TVDetailsProps> = ({ id, onPlay }) => {
         <span className="text-sm font-medium">{toast.message}</span>
       </div>
 
+       {/* TRAILER MODAL */}
+       {showTrailerModal && trailerKey && (
+          <div className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center animate-fade-in">
+              <button 
+                  onClick={() => setShowTrailerModal(false)}
+                  className="absolute top-4 right-4 z-50 w-10 h-10 bg-white/10 rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-colors"
+              >
+                  <span className="material-symbols-rounded">close</span>
+              </button>
+              <div className="w-full h-full max-w-5xl max-h-[80vh] aspect-video bg-black">
+                  <iframe 
+                      width="100%" 
+                      height="100%" 
+                      src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&rel=0&modestbranding=1`} 
+                      title="YouTube video player" 
+                      frameBorder="0" 
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                      allowFullScreen
+                  ></iframe>
+              </div>
+          </div>
+      )}
+
       {/* NAVIGATION */}
       <nav className={`fixed top-0 left-0 w-full p-4 z-40 flex justify-between items-center transition-all duration-500 ${isScrolled ? 'bg-background-dark/90 backdrop-blur-xl border-b border-white/5' : 'bg-gradient-to-b from-black/80 to-transparent'}`}>
         <button onClick={() => window.history.back()} className="w-10 h-10 rounded-full bg-white/5 backdrop-blur-md border border-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
@@ -175,6 +233,9 @@ const TVDetails: React.FC<TVDetailsProps> = ({ id, onPlay }) => {
         <div className="flex gap-3">
           <button onClick={() => showToast('cast', 'Transmitindo...')} className="w-10 h-10 rounded-full bg-white/5 backdrop-blur-md border border-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
             <span className="material-symbols-rounded text-white">cast</span>
+          </button>
+          <button onClick={handleShare} className="w-10 h-10 rounded-full bg-white/5 backdrop-blur-md border border-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
+            <span className="material-symbols-rounded text-white">ios_share</span>
           </button>
         </div>
       </nav>
@@ -210,6 +271,10 @@ const TVDetails: React.FC<TVDetailsProps> = ({ id, onPlay }) => {
             <button onClick={playFirstEpisode} className="bg-white text-black px-6 py-3 rounded-xl font-bold font-display flex items-center gap-2 hover:bg-gray-200 transition-colors active:scale-95 shadow-xl">
               <span className="material-symbols-rounded fill-1">play_arrow</span>
               Assistir
+            </button>
+            <button onClick={handleWatchTrailer} className="px-6 py-3 bg-white/10 border border-white/10 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-white/20 transition-colors active:scale-95">
+                <span className="material-symbols-rounded">smart_display</span>
+                Trailer
             </button>
             <button onClick={toggleMyList} className={`px-4 py-3 rounded-xl flex items-center justify-center transition active:scale-95 backdrop-blur-md border ${inList ? 'bg-primary border-primary text-white' : 'bg-white/10 border-white/10 text-white hover:bg-white/20'}`}>
               <span className="material-symbols-rounded">{inList ? 'check' : 'add'}</span>

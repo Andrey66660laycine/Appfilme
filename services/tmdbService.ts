@@ -136,6 +136,27 @@ export const tmdb = {
     }
   },
 
+  getVideos: async (id: string, type: 'movie' | 'tv'): Promise<any[]> => {
+      try {
+          // Busca vídeos em PT-BR
+          let res = await fetch(`${BASE_URL}/${type}/${id}/videos?api_key=${API_KEY}&language=${LANG}`);
+          let data = await res.json();
+          let results = data.results || [];
+          
+          // Se não houver trailer em PT-BR, busca em Inglês (fallback)
+          if (results.length === 0) {
+              res = await fetch(`${BASE_URL}/${type}/${id}/videos?api_key=${API_KEY}&language=en-US`);
+              data = await res.json();
+              results = data.results || [];
+          }
+          
+          return results;
+      } catch (error) {
+          console.error("Failed to fetch videos:", error);
+          return [];
+      }
+  },
+
   getPosterUrl: (path: string, size: 'w500' | 'original' = 'w500') => 
     path ? `${IMAGE_BASE_URL}/${size}${path}` : 'https://picsum.photos/500/750?grayscale',
     

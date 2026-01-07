@@ -18,6 +18,9 @@ const MovieDetails: React.FC<MovieDetailsProps> = ({ id, onPlay }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'more' | 'details'>('overview');
   const [inList, setInList] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [trailerKey, setTrailerKey] = useState<string | null>(null);
+  const [showTrailerModal, setShowTrailerModal] = useState(false);
+  
   const [toast, setToast] = useState<{ visible: boolean; message: string; icon: string }>({
     visible: false,
     message: '',
@@ -29,12 +32,19 @@ const MovieDetails: React.FC<MovieDetailsProps> = ({ id, onPlay }) => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [movieData, castData] = await Promise.all([
+        const [movieData, castData, videosData] = await Promise.all([
           tmdb.getMovieDetails(id),
-          tmdb.getMovieCast(id)
+          tmdb.getMovieCast(id),
+          tmdb.getVideos(id, 'movie')
         ]);
+        
         setMovie(movieData);
         setCast(castData);
+        
+        // Find trailer
+        const trailer = videosData.find((v: any) => v.type === "Trailer" && v.site === "YouTube") || videosData.find((v: any) => v.site === "YouTube");
+        if (trailer) setTrailerKey(trailer.key);
+
         if (movieData && currentProfile) {
             const exists = await storageService.isInLibrary(currentProfile.id, movieData.id, 'movie');
             setInList(exists);
@@ -74,6 +84,34 @@ const MovieDetails: React.FC<MovieDetailsProps> = ({ id, onPlay }) => {
     setTimeout(() => {
       setToast(prev => ({ ...prev, visible: false }));
     }, 3000);
+  };
+
+  const handleShare = async () => {
+    if (!movie) return;
+    const shareData = {
+        title: `Void Max - Assista ${movie.title}`,
+        text: `Estou assistindo ${movie.title} no Void Max. Venha conferir!`,
+        url: window.location.href
+    };
+
+    if (navigator.share) {
+        try {
+            await navigator.share(shareData);
+        } catch (err) {
+            console.log('Share dismissed');
+        }
+    } else {
+        navigator.clipboard.writeText(window.location.href);
+        showToast('link', 'Link copiado para a área de transferência!');
+    }
+  };
+
+  const handleWatchTrailer = () => {
+      if (trailerKey) {
+          setShowTrailerModal(true);
+      } else {
+          showToast('videocam_off', 'Trailer indisponível no momento');
+      }
   };
 
   const toggleMyList = async () => {
@@ -126,6 +164,29 @@ const MovieDetails: React.FC<MovieDetailsProps> = ({ id, onPlay }) => {
         <span className="material-symbols-rounded text-primary">{toast.icon}</span>
         <span className="text-sm font-medium">{toast.message}</span>
       </div>
+
+      {/* TRAILER MODAL */}
+      {showTrailerModal && trailerKey && (
+          <div className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center animate-fade-in">
+              <button 
+                  onClick={() => setShowTrailerModal(false)}
+                  className="absolute top-4 right-4 z-50 w-10 h-10 bg-white/10 rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-colors"
+              >
+                  <span className="material-symbols-rounded">close</span>
+              </button>
+              <div className="w-full h-full max-w-5xl max-h-[80vh] aspect-video bg-black">
+                  <iframe 
+                      width="100%" 
+                      height="100%" 
+                      src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&rel=0&modestbranding=1`} 
+                      title="YouTube video player" 
+                      frameBorder="0" 
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                      allowFullScreen
+                  ></iframe>
+              </div>
+          </div>
+      )}
 
       {/* NAVIGATION HEADER */}
       <nav className={`fixed top-0 left-0 w-full p-4 z-40 flex justify-between items-center transition-all duration-300 ${isScrolled ? 'bg-background-dark/85 backdrop-blur-xl border-b border-white/5' : 'bg-transparent'}`}>
@@ -184,7 +245,7 @@ const MovieDetails: React.FC<MovieDetailsProps> = ({ id, onPlay }) => {
             <span className="material-symbols-rounded fill-1 text-3xl">play_arrow</span>
             Assistir
           </button>
-          <button onClick={() => showToast('smart_display', 'Trailer em breve')} className="w-full bg-white/10 hover:bg-white/15 border border-white/5 backdrop-blur-md text-white font-display font-medium text-lg py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98]">
+          <button onClick={handleWatchTrailer} className="w-full bg-white/10 hover:bg-white/15 border border-white/5 backdrop-blur-md text-white font-display font-medium text-lg py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98]">
             <span className="material-symbols-rounded">smart_display</span>
             Trailer
           </button>
@@ -208,7 +269,7 @@ const MovieDetails: React.FC<MovieDetailsProps> = ({ id, onPlay }) => {
             <span className="text-[10px] text-white/50 group-hover:text-white uppercase tracking-wide">Avaliar</span>
           </button>
           
-          <button onClick={() => showToast('share', 'Link copiado!')} className="flex flex-col items-center gap-1 group active:scale-90 transition-transform">
+          <button onClick={handleShare} className="flex flex-col items-center gap-1 group active:scale-90 transition-transform">
             <div className="p-2 rounded-full hover:bg-white/10 transition-colors text-white">
               <span className="material-symbols-rounded text-2xl">ios_share</span>
             </div>

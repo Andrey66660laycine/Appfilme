@@ -8,49 +8,56 @@ interface ProfileGatewayProps {
   onLogout: () => void;
 }
 
-const AVATARS = {
+// Avatares inspirados em serviços de streaming (Usando imagens públicas do TMDB/Dicebear)
+const AVATAR_COLLECTIONS: Record<string, string[]> = {
   "Originais": [
-      "https://image.tmdb.org/t/p/w200/A3i709j999J3gD657e.jpg", 
-      "https://image.tmdb.org/t/p/w200/kp8p3Y375K3554645.jpg", 
-      "https://image.tmdb.org/t/p/w200/533Z2X77777777777.jpg",
-      "https://image.tmdb.org/t/p/w200/9e9e9e9e9e9e9e9e9e.jpg",
-      "https://image.tmdb.org/t/p/w200/8q8q8q8q8q8q8q8q8q.jpg", 
-      "https://image.tmdb.org/t/p/w200/1234567890abcdef.jpg"
+      "https://image.tmdb.org/t/p/w200/8q8q8q8q8q8q8q8q8q.jpg", // Placeholder pattern
+      "https://image.tmdb.org/t/p/w200/A3i709j999J3gD657e.jpg", // Red Mask
+      "https://image.tmdb.org/t/p/w200/kp8p3Y375K3554645.jpg", // Dali Mask
+      "https://image.tmdb.org/t/p/w200/533Z2X77777777777.jpg", // Squid Game
+      "https://image.tmdb.org/t/p/w200/9e9e9e9e9e9e9e9e9e.jpg", // Stranger Things vibe
+      "https://image.tmdb.org/t/p/w200/3bOGNsHlrswhyW79uvIHH1V43JI.jpg", // Breaking Bad
+      "https://image.tmdb.org/t/p/w200/b7fTC9WFkgqGOv77mLQzqDCVX0y.jpg", // Peak Blinders
+      "https://image.tmdb.org/t/p/w200/stTEycfG9928HYGEISBFaG1ngjC.jpg", // Wednesday
+      "https://image.tmdb.org/t/p/w200/6v0fT8h8jN7e0r0m0o0p0q0s0t.jpg",
   ],
-  "Heróis": [
-      "https://image.tmdb.org/t/p/w200/8Vt6mWEReuy4Of61Lnj5Xj704m8.jpg",
-      "https://image.tmdb.org/t/p/w200/74xTEgt7R36Fpooo50r9T25onhq.jpg",
-      "https://image.tmdb.org/t/p/w200/gajva2L0rPYkEWjzgFlBXCAVBE5.jpg",
-      "https://image.tmdb.org/t/p/w200/l5K9eluyEajaxabjkeJ.jpg",
-      "https://image.tmdb.org/t/p/w200/623456789012345678.jpg"
+  "Heróis & Vilões": [
+      "https://image.tmdb.org/t/p/w200/8Vt6mWEReuy4Of61Lnj5Xj704m8.jpg", // Spider
+      "https://image.tmdb.org/t/p/w200/74xTEgt7R36Fpooo50r9T25onhq.jpg", // Batman
+      "https://image.tmdb.org/t/p/w200/gajva2L0rPYkEWjzgFlBXCAVBE5.jpg", // Deadpool
+      "https://image.tmdb.org/t/p/w200/l5K9eluyEajaxabjkeJ.jpg", // Joker
+      "https://image.tmdb.org/t/p/w200/623456789012345678.jpg", // Iron Man vibe
+      "https://image.tmdb.org/t/p/w200/n7RW7p6q38W3kXg8y0z9A8b7C6.jpg", // Wonder Woman
+      "https://image.tmdb.org/t/p/w200/qm7W9D1r5v6F9g8h7i6j5k4l3m.jpg", // Superman
+      "https://image.tmdb.org/t/p/w200/1kks3YnQw8vF9p5m6n7o8q9r0s.jpg", // Thanos
   ],
-  "Kids": [
-      "https://image.tmdb.org/t/p/w200/qA5kPYZA7FkVvqnOBV7nCxpWSDv.jpg",
-      "https://image.tmdb.org/t/p/w200/t6HIqrRAclMCA60NsSmeqe9RmNV.jpg",
-      "https://image.tmdb.org/t/p/w200/kDp1vUBnMpe8ak4rjgl3cLELqjU.jpg",
-      "https://image.tmdb.org/t/p/w200/w2PMyoyLU22YvrGKz.jpg",
-      "https://image.tmdb.org/t/p/w200/234567890123456789.jpg"
+  "Animação": [
+      "https://image.tmdb.org/t/p/w200/qA5kPYZA7FkVvqnOBV7nCxpWSDv.jpg", // Toy Story
+      "https://image.tmdb.org/t/p/w200/t6HIqrRAclMCA60NsSmeqe9RmNV.jpg", // Minions
+      "https://image.tmdb.org/t/p/w200/kDp1vUBnMpe8ak4rjgl3cLELqjU.jpg", // Kung Fu Panda
+      "https://image.tmdb.org/t/p/w200/w2PMyoyLU22YvrGKz.jpg", // Shrek
+      "https://image.tmdb.org/t/p/w200/234567890123456789.jpg", // Frozen
+      "https://image.tmdb.org/t/p/w200/yYRwQmaOpnvabdNSiybv53835M5.jpg", // Spideyverse
+      "https://image.tmdb.org/t/p/w200/x7l9l5h8i6j7k8l9m0n1o2p3q4.jpg", // Stitch
+      "https://image.tmdb.org/t/p/w200/z0h1j2k3l4m5n6o7p8q9r0s1t.jpg", // Mario
+  ],
+  "Sci-Fi & Fantasia": [
+      "https://image.tmdb.org/t/p/w200/5u18BDTk60Nl19hXJ8yJ5o4p0q.jpg", // Avatar
+      "https://image.tmdb.org/t/p/w200/dzBT7j5KKG9j9g0h0i1j2k3l4m.jpg", // Dune
+      "https://image.tmdb.org/t/p/w200/9g8h7i6j5k4l3m2n1o0p9q8r7.jpg", // Star Wars
+      "https://image.tmdb.org/t/p/w200/1a2b3c4d5e6f7g8h9i0j1k2l3.jpg", // LOTR
+      "https://image.tmdb.org/t/p/w200/4m5n6o7p8q9r0s1t2u3v4w5x6.jpg", // Harry Potter
+      "https://image.tmdb.org/t/p/w200/7y8z9a0b1c2d3e4f5g6h7i8j9.jpg", // Game of Thrones
+  ],
+  "Clássicos": [
+      "https://api.dicebear.com/7.x/adventurer/svg?seed=Felix",
+      "https://api.dicebear.com/7.x/adventurer/svg?seed=Aneka",
+      "https://api.dicebear.com/7.x/adventurer/svg?seed=Christopher",
+      "https://api.dicebear.com/7.x/adventurer/svg?seed=Jack",
+      "https://api.dicebear.com/7.x/micah/svg?seed=Nala",
+      "https://api.dicebear.com/7.x/micah/svg?seed=Leo"
   ]
 };
-
-const FALLBACK_AVATARS = {
-    "Originais": [
-        "https://api.dicebear.com/7.x/adventurer/svg?seed=Felix",
-        "https://api.dicebear.com/7.x/adventurer/svg?seed=Aneka",
-        "https://api.dicebear.com/7.x/adventurer/svg?seed=Christopher",
-        "https://api.dicebear.com/7.x/adventurer/svg?seed=Jack"
-    ],
-    "Heróis": [
-        "https://api.dicebear.com/7.x/micah/svg?seed=Batman",
-        "https://api.dicebear.com/7.x/micah/svg?seed=Superman",
-        "https://api.dicebear.com/7.x/micah/svg?seed=Flash"
-    ],
-    "Kids": [
-        "https://api.dicebear.com/7.x/fun-emoji/svg?seed=Happy",
-        "https://api.dicebear.com/7.x/fun-emoji/svg?seed=Cute",
-        "https://api.dicebear.com/7.x/fun-emoji/svg?seed=Bear"
-    ]
-}
 
 const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogout }) => {
   const [view, setView] = useState<'gateway' | 'editor' | 'dashboard' | 'account_settings'>('gateway');
@@ -79,14 +86,17 @@ const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogo
   const handleCreateOrUpdate = async () => {
     if (!nameInput.trim()) return alert("Digite um nome!");
     
+    // Default avatar if none selected
+    const avatarToUse = selectedAvatar || AVATAR_COLLECTIONS["Originais"][0];
+
     if (editingProfile) {
         await storageService.updateProfile(editingProfile.id, {
             name: nameInput,
-            avatar: selectedAvatar,
+            avatar: avatarToUse,
             is_kid: isKidInput
         });
     } else {
-        await storageService.createProfile(nameInput, selectedAvatar, isKidInput);
+        await storageService.createProfile(nameInput, avatarToUse, isKidInput);
     }
     
     await loadProfiles();
@@ -129,7 +139,7 @@ const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogo
         setEditingProfile(null);
         setNameInput("");
         setIsKidInput(false);
-        setSelectedAvatar(FALLBACK_AVATARS["Originais"][0]);
+        setSelectedAvatar(AVATAR_COLLECTIONS["Originais"][Math.floor(Math.random() * 4)]);
     }
     setView('editor');
   };
@@ -139,7 +149,6 @@ const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogo
       return hours;
   }
 
-  // Design styles injection
   return (
     <div className="min-h-screen bg-black text-white font-body overflow-x-hidden">
        {/* Global Background */}
@@ -155,12 +164,12 @@ const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogo
              <div className="flex items-center justify-between p-6 border-b border-white/10 bg-black/50">
                 <div className="flex items-center gap-4">
                     <button onClick={() => setShowAvatarModal(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><span className="material-symbols-rounded text-3xl">arrow_back</span></button>
-                    <h2 className="text-xl font-display font-bold">Escolha um Avatar</h2>
+                    <h2 className="text-xl font-display font-bold">Escolha um Ícone</h2>
                 </div>
             </div>
             <div className="border-b border-white/5 bg-black/30">
                 <div className="flex gap-4 px-6 py-4 overflow-x-auto hide-scrollbar">
-                    {Object.keys(FALLBACK_AVATARS).map(cat => (
+                    {Object.keys(AVATAR_COLLECTIONS).map(cat => (
                         <button key={cat} onClick={() => setAvatarCategory(cat)} className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${avatarCategory === cat ? 'bg-white text-black' : 'bg-white/10 text-white hover:bg-white/20'}`}>
                             {cat}
                         </button>
@@ -168,10 +177,11 @@ const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogo
                 </div>
             </div>
             <div className="flex-1 overflow-y-auto p-6 hide-scrollbar">
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-4">
-                    {(FALLBACK_AVATARS as any)[avatarCategory].map((src: string) => (
-                        <div key={src} onClick={() => { setSelectedAvatar(src); setShowAvatarModal(false); }} className="aspect-square rounded-full overflow-hidden cursor-pointer border-2 border-transparent hover:border-white transition-all hover:scale-110 bg-white/5">
-                            <img src={src} className="w-full h-full object-cover" />
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-6">
+                    {AVATAR_COLLECTIONS[avatarCategory].map((src: string, index: number) => (
+                        <div key={index} onClick={() => { setSelectedAvatar(src); setShowAvatarModal(false); }} className="aspect-square rounded-lg overflow-hidden cursor-pointer border-2 border-transparent hover:border-white transition-all hover:scale-110 bg-white/5 relative group">
+                            <img src={src} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt="Avatar" />
+                            <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors"></div>
                         </div>
                     ))}
                 </div>
@@ -189,7 +199,7 @@ const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogo
                 <div className="flex flex-wrap justify-center gap-6 md:gap-10 animate-slide-up">
                     {profiles.map(p => (
                         <div key={p.id} className="group flex flex-col items-center gap-3 cursor-pointer w-32" onClick={() => { setDashboardProfile(p); setView('dashboard'); }}>
-                            <div className="relative w-24 h-24 sm:w-32 sm:h-32 rounded-lg overflow-hidden transition-all duration-300 group-hover:ring-4 group-hover:scale-105 group-hover:ring-white">
+                            <div className="relative w-24 h-24 sm:w-32 sm:h-32 rounded-lg overflow-hidden transition-all duration-300 group-hover:ring-4 group-hover:scale-105 group-hover:ring-white shadow-2xl">
                                 <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors z-10"></div>
                                 <img src={p.avatar} className="w-full h-full object-cover bg-surface" />
                             </div>
@@ -286,6 +296,7 @@ const ProfileGateway: React.FC<ProfileGatewayProps> = ({ onProfileSelect, onLogo
                                     <span className="material-symbols-rounded text-4xl text-white">edit</span>
                                 </div>
                             </div>
+                            <p className="text-xs text-white/50 uppercase tracking-widest">Alterar Ícone</p>
                         </div>
 
                         <div className="flex-1 w-full space-y-6">

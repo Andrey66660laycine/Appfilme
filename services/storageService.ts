@@ -148,8 +148,12 @@ export const storageService = {
 
       if (error) return [];
       
+      // FIX CRÍTICO: Mapeia o 'tmdb_id' para 'id' para que o Player abra o filme correto.
+      // O 'id' original da tabela (UUID) é descartado ou renomeado.
       return (data || []).map((item: any) => ({
           ...item,
+          id: item.tmdb_id, // Isso garante que o clique abra o filme certo
+          row_id: item.id,  // Mantém o ID original caso precise deletar especificamente
           timestamp: item.created_at ? new Date(item.created_at).getTime() : Date.now(),
           progress: item.progress || 0,
           duration: item.duration || 0

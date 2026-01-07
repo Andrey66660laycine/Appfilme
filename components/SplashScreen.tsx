@@ -7,209 +7,180 @@ interface SplashScreenProps {
 
 const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
   const [exiting, setExiting] = useState(false);
-  const [stars, setStars] = useState<{top: string, left: string, delay: string, size: string}[]>([]);
 
   useEffect(() => {
-    // Gerar estrelas aleatórias para o fundo "Void"
-    const newStars = Array.from({ length: 50 }).map(() => ({
-        top: `${Math.random() * 100}%`,
-        left: `${Math.random() * 100}%`,
-        delay: `${Math.random() * 5}s`,
-        size: `${Math.random() * 2 + 1}px`
-    }));
-    setStars(newStars);
-
-    // Sequência de Tempo
     const timer = setTimeout(() => {
       setExiting(true);
-      setTimeout(onFinish, 1000); // Tempo da transição de saída (zoom out)
-    }, 4500);
+      setTimeout(onFinish, 800);
+    }, 4000); // 4 segundos de show
 
     return () => clearTimeout(timer);
   }, [onFinish]);
 
   return (
-    <div className={`fixed inset-0 z-[9999] bg-[#000000] flex flex-col items-center justify-center overflow-hidden transition-all duration-1000 cubic-bezier(0.85, 0, 0.15, 1) ${exiting ? 'opacity-0 scale-150 blur-2xl pointer-events-none' : 'opacity-100 scale-100'}`}>
+    <div className={`fixed inset-0 z-[9999] bg-[#030303] flex flex-col items-center justify-center overflow-hidden transition-all duration-700 ease-in-out ${exiting ? 'opacity-0 scale-110 blur-xl pointer-events-none' : 'opacity-100 scale-100'}`}>
       
-      {/* --- ATMOSPHERE LAYERS --- */}
+      {/* --- LAYER 1: THE VOID ATMOSPHERE --- */}
+      {/* Deep dark textured background */}
+      <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 mix-blend-overlay"></div>
       
-      {/* 1. Deep Space Gradient */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,#1a0526_0%,#000000_100%)]"></div>
+      {/* Dynamic Fog/Smoke */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black via-transparent to-black z-10"></div>
+      <div className="absolute top-[-50%] left-[-50%] w-[200%] h-[200%] bg-[radial-gradient(circle_at_center,rgba(124,58,237,0.15)_0%,transparent_50%)] animate-pulse-slow opacity-60"></div>
       
-      {/* 2. Moving Stars (The Void) */}
-      <div className="absolute inset-0 z-0 opacity-60">
-        {stars.map((star, i) => (
-            <div 
-                key={i} 
-                className="absolute bg-white rounded-full animate-twinkle"
-                style={{
-                    top: star.top, 
-                    left: star.left, 
-                    width: star.size, 
-                    height: star.size,
-                    animationDelay: star.delay
-                }}
-            />
-        ))}
-      </div>
+      {/* Heavy Vignette */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_30%,#000000_90%)] z-20"></div>
 
-      {/* 3. Subtle Grid Floor (Cyberpunk feel) */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(242,13,242,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,212,255,0.03)_1px,transparent_1px)] bg-[size:60px_60px] [mask-image:radial-gradient(ellipse_60%_60%_at_50%_50%,black,transparent)] transform perspective-[500px] rotate-x-12 opacity-40"></div>
-
-      {/* --- MAIN LOGO COMPOSITION --- */}
-      <div className="relative z-10 flex flex-col items-center">
+      {/* --- LAYER 2: THE GLITCH LOGO --- */}
+      <div className="relative z-30 flex flex-col items-center scale-110 md:scale-125">
         
-        {/* SVG CONTAINER */}
-        <div className="relative w-[340px] h-[260px] mb-6 filter drop-shadow-[0_0_0px_rgba(0,0,0,0)]">
-            <svg viewBox="0 0 200 150" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full overflow-visible">
+        {/* Container with Glitch Shake Animation */}
+        <div className="relative w-[300px] h-[220px] mb-8 animate-glitch-shake">
+            
+            {/* SHADOW/GLOW BEHIND */}
+            <div className="absolute inset-0 bg-primary/20 blur-[60px] rounded-full animate-pulse-fast opacity-50"></div>
+
+            <svg viewBox="0 0 200 150" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full overflow-visible relative">
                 <defs>
-                    {/* GRADIENT FOR GLOW */}
-                    <linearGradient id="neonGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor="#7c3aed" /> {/* Purple */}
-                        <stop offset="50%" stopColor="#f20df2" /> {/* Magenta */}
-                        <stop offset="100%" stopColor="#00d4ff" /> {/* Cyan */}
+                    <linearGradient id="darkNeon" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#d946ef" /> {/* Fuchsia */}
+                        <stop offset="50%" stopColor="#8b5cf6" /> {/* Violet */}
+                        <stop offset="100%" stopColor="#0ea5e9" /> {/* Sky */}
                     </linearGradient>
                     
-                    {/* SUPER GLOW FILTER */}
-                    <filter id="superGlow" height="300%" width="300%" x="-75%" y="-75%">
-                        <feGaussianBlur stdDeviation="6" result="coloredBlur" />
-                        <feGaussianBlur stdDeviation="12" result="coloredBlur2" in="SourceGraphic"/>
+                    {/* Hard Glow Filter */}
+                    <filter id="hardGlow" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                        <feOffset dx="0" dy="0" result="offsetblur"/>
+                        <feFlood floodColor="#f20df2" floodOpacity="0.8"/>
+                        <feComposite in2="offsetblur" operator="in"/>
                         <feMerge>
-                            <feMergeNode in="coloredBlur" />
-                            <feMergeNode in="coloredBlur2" />
-                            <feMergeNode in="SourceGraphic" />
+                            <feMergeNode/>
+                            <feMergeNode in="SourceGraphic"/>
                         </feMerge>
                     </filter>
                 </defs>
 
-                {/* LAYER 1: THE GLOW (Blurred, Color) - Draws first */}
+                {/* 1. RGB SPLIT LAYERS (The Glitch Effect) */}
+                <path d="M 20 20 L 55 110 L 95 30 Q 120 0 145 30 L 145 110" stroke="red" strokeWidth="8" fill="none" className="opacity-0 animate-glitch-red mix-blend-screen" />
+                <path d="M 20 20 L 55 110 L 95 30 Q 120 0 145 30 L 145 110" stroke="cyan" strokeWidth="8" fill="none" className="opacity-0 animate-glitch-blue mix-blend-screen" />
+
+                {/* 2. MAIN LOGO PATH (Stroke Animation) */}
                 <path 
                     d="M 20 20 L 55 110 L 95 30 Q 120 0 145 30 L 145 110" 
-                    stroke="url(#neonGradient)" 
-                    strokeWidth="14" 
+                    stroke="url(#darkNeon)" 
+                    strokeWidth="10" 
                     strokeLinecap="round" 
                     strokeLinejoin="round"
                     fill="none"
-                    className="draw-path opacity-60"
-                    style={{filter: 'blur(8px)'}}
+                    className="animate-draw-snap"
+                    style={{filter: 'url(#hardGlow)'}}
                 />
 
-                {/* LAYER 2: THE TUBE (Sharp, White-ish) - Draws second with flicker */}
+                {/* 3. PLAY ICON (Aggressive Pop) */}
                 <path 
-                    d="M 20 20 L 55 110 L 95 30 Q 120 0 145 30 L 145 110" 
-                    stroke="#fff" 
-                    strokeWidth="4" 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round"
-                    fill="none"
-                    className="draw-path neon-flicker"
+                    d="M 105 60 L 135 80 L 105 100 Z" 
+                    fill="#fff" 
+                    className="animate-pop-flash"
+                    style={{filter: 'drop-shadow(0 0 15px rgba(255,255,255,0.8))'}}
                 />
-                
-                {/* PLAY ICON (The "V" inset) */}
-                <g className="play-icon-group">
-                    {/* Glow */}
-                    <path d="M 105 60 L 135 80 L 105 100 Z" fill="#00d4ff" filter="blur(6px)" opacity="0.6" />
-                    {/* Core */}
-                    <path d="M 105 60 L 135 80 L 105 100 Z" fill="#e0faff" />
-                </g>
             </svg>
-
-            {/* Sparkle Effect at the end of the M */}
-            <div className="absolute top-[72%] right-[26%] w-1 h-1 bg-white rounded-full shadow-[0_0_20px_10px_rgba(0,212,255,0.8)] animate-spark-flash opacity-0"></div>
         </div>
 
-        {/* TEXT LOGO - CINEMATIC REVEAL */}
+        {/* --- LAYER 3: TEXT --- */}
         <div className="relative overflow-hidden">
-            <h1 className="font-display font-black text-6xl md:text-7xl tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-400 animate-text-reveal opacity-0" style={{ textShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+            <h1 className="font-display font-black text-6xl md:text-7xl tracking-[0.3em] text-white opacity-0 animate-text-flicker mix-blend-overlay">
                 VOID MAX
             </h1>
-            
-            {/* Energy Line */}
-            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 h-[2px] bg-gradient-to-r from-transparent via-[#f20df2] to-transparent animate-energy-line opacity-0 w-full"></div>
+            {/* The "Scanner" Line */}
+            <div className="absolute top-0 left-[-100%] w-[50%] h-full bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12 animate-scan-pass"></div>
         </div>
+
       </div>
 
-      {/* --- CSS ANIMATIONS (Injected) --- */}
+      {/* --- CSS INJECTION --- */}
       <style>{`
-        /* 1. Drawing the Line */
-        .draw-path {
+        /* 1. AGGRESSIVE DRAWING */
+        .animate-draw-snap {
             stroke-dasharray: 450;
             stroke-dashoffset: 450;
-            animation: drawStroke 2s cubic-bezier(0.6, 0, 0.2, 1) forwards;
+            animation: snapDraw 2.5s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+        }
+        @keyframes snapDraw {
+            0% { stroke-dashoffset: 450; opacity: 0; }
+            10% { opacity: 1; }
+            40% { stroke-dashoffset: 100; } /* Pause briefly */
+            100% { stroke-dashoffset: 0; opacity: 1; }
         }
 
-        @keyframes drawStroke {
-            0% { stroke-dashoffset: 450; }
-            100% { stroke-dashoffset: 0; }
+        /* 2. RGB GLITCH EFFECT */
+        .animate-glitch-red { animation: glitchRed 2.5s steps(2, end) infinite; }
+        .animate-glitch-blue { animation: glitchBlue 2.5s steps(2, end) infinite; }
+
+        @keyframes glitchRed {
+            0%, 80%, 100% { opacity: 0; transform: translate(0); }
+            81% { opacity: 1; transform: translate(-4px, 2px); }
+            83% { opacity: 0; transform: translate(0); }
+            86% { opacity: 1; transform: translate(3px, -1px); }
+            90% { opacity: 0; }
+        }
+        @keyframes glitchBlue {
+            0%, 82%, 100% { opacity: 0; transform: translate(0); }
+            83% { opacity: 1; transform: translate(4px, -2px); }
+            85% { opacity: 0; transform: translate(0); }
+            88% { opacity: 1; transform: translate(-3px, 1px); }
+            92% { opacity: 0; }
         }
 
-        /* 2. Realistic Neon Ignition (Flicker) */
-        .neon-flicker {
-            animation: 
-                drawStroke 2s cubic-bezier(0.6, 0, 0.2, 1) forwards,
-                ignite 3s linear forwards 1.8s; /* Starts after drawing */
+        /* 3. SHAKE */
+        .animate-glitch-shake {
+            animation: shake 3s cubic-bezier(.36,.07,.19,.97) both;
+        }
+        @keyframes shake {
+            0%, 80% { transform: translate3d(0, 0, 0); }
+            81% { transform: translate3d(-1px, 0, 0); }
+            82% { transform: translate3d(2px, 0, 0); }
+            83% { transform: translate3d(-4px, 0, 0); }
+            84% { transform: translate3d(4px, 0, 0); }
+            85% { transform: translate3d(-1px, 0, 0); }
+            90%, 100% { transform: translate3d(0, 0, 0); }
         }
 
-        @keyframes ignite {
-            0%, 2%, 4%, 6% { opacity: 0.1; stroke: #444; } /* Off */
-            1%, 3%, 5% { opacity: 0.8; stroke: #fff; } /* Flash */
-            7% { opacity: 0.1; stroke: #444; }
-            8%, 20% { opacity: 1; stroke: #fff; filter: drop-shadow(0 0 5px #fff); } /* On */
-            21% { opacity: 0.5; }
-            22%, 100% { opacity: 1; stroke: #fff; filter: drop-shadow(0 0 10px #f20df2); } /* Stable On */
+        /* 4. TEXT FLICKER (Broken Neon Bulb) */
+        .animate-text-flicker {
+            animation: textFlicker 3s linear forwards;
+        }
+        @keyframes textFlicker {
+            0% { opacity: 0; letter-spacing: 1em; filter: blur(10px); }
+            40% { opacity: 0.2; letter-spacing: 0.5em; filter: blur(5px); }
+            45% { opacity: 0.8; }
+            50% { opacity: 0.1; }
+            55% { opacity: 1; text-shadow: 0 0 20px rgba(255,255,255,0.8); }
+            60% { opacity: 0.4; }
+            70% { opacity: 1; letter-spacing: 0.3em; filter: blur(0); text-shadow: 0 0 10px rgba(255,255,255,0.5); }
+            100% { opacity: 1; letter-spacing: 0.3em; text-shadow: 0 0 0 transparent; }
         }
 
-        /* 3. Play Icon Pop */
-        .play-icon-group {
+        /* 5. PLAY POP */
+        .animate-pop-flash {
             opacity: 0;
             transform-origin: 120px 80px;
-            transform: scale(0);
-            animation: iconPop 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards 2.2s;
+            animation: popFlash 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards 2s;
+        }
+        @keyframes popFlash {
+            0% { opacity: 0; transform: scale(0) rotate(45deg); }
+            50% { opacity: 1; transform: scale(1.5) rotate(0); fill: #fff; }
+            100% { opacity: 1; transform: scale(1); fill: #00d4ff; }
         }
 
-        @keyframes iconPop {
-            to { opacity: 1; transform: scale(1); }
+        /* 6. SCAN PASS */
+        .animate-scan-pass {
+            animation: scanPass 2s ease-in-out forwards 2s;
         }
-
-        /* 4. Text Cinematic Reveal */
-        .animate-text-reveal {
-            animation: textReveal 1.5s cubic-bezier(0.2, 1, 0.3, 1) forwards 2s;
-        }
-
-        @keyframes textReveal {
-            0% { opacity: 0; letter-spacing: 0.5em; filter: blur(10px); transform: scale(1.1); }
-            100% { opacity: 1; letter-spacing: 0.2em; filter: blur(0px); transform: scale(1); }
-        }
-
-        /* 5. Energy Line Expansion */
-        .animate-energy-line {
-            animation: expandLine 1s ease-out forwards 2.5s;
-        }
-
-        @keyframes expandLine {
-            0% { width: 0; opacity: 0; }
+        @keyframes scanPass {
+            0% { left: -100%; opacity: 0; }
             50% { opacity: 1; }
-            100% { width: 60%; opacity: 0.5; }
-        }
-
-        /* 6. Spark Flash at end of path */
-        .animate-spark-flash {
-            animation: spark 0.4s ease-out forwards 1.8s;
-        }
-
-        @keyframes spark {
-            0% { opacity: 0; transform: scale(0); }
-            50% { opacity: 1; transform: scale(2); }
-            100% { opacity: 0; transform: scale(0); }
-        }
-
-        /* 7. Background Twinkle */
-        @keyframes twinkle {
-            0%, 100% { opacity: 0.3; transform: scale(1); }
-            50% { opacity: 1; transform: scale(1.5); }
-        }
-        .animate-twinkle {
-            animation: twinkle 3s infinite ease-in-out;
+            100% { left: 200%; opacity: 0; }
         }
       `}</style>
     </div>

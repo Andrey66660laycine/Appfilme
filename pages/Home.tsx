@@ -11,18 +11,20 @@ interface HomeProps {
   onPlayVideo: (config: any) => void;
 }
 
+// CORRIGIDO: URLs diretas e funcionais do TMDb (Original Size)
 const SAGAS = [
-    { id: 1241, name: 'Harry Potter', image: 'https://image.tmdb.org/t/p/w1280/wfnMt6LGqYHcNyWEqTEpWCn7bOV.jpg' },
-    { id: 10, name: 'Star Wars', image: 'https://image.tmdb.org/t/p/w1280/d8duYyyC9J5T825Hg7grmaabfxQ.jpg' },
-    { id: 86311, name: 'Universo Marvel', image: 'https://image.tmdb.org/t/p/w1280/mdf6322h31db5Z095729c065f50.jpg' },
-    { id: 9485, name: 'Velozes & Furiosos', image: 'https://image.tmdb.org/t/p/w1280/z5A5W3WYJc3UVEWljSGwdjDgQ0j.jpg' },
-    { id: 119, name: 'O Senhor dos Anéis', image: 'https://image.tmdb.org/t/p/w1280/bccR2CGTWVSSZDO7S5cVruhHVk9.jpg' },
-    { id: 131635, name: 'Jogos Vorazes', image: 'https://image.tmdb.org/t/p/w1280/Ipp5Qta090x6Z273V4Q2z6K3uW.jpg' }
+    { id: 1241, name: 'Harry Potter', image: 'https://image.tmdb.org/t/p/original/hziiv14OpD73u9gAak4XDDfB39T.jpg' },
+    { id: 10, name: 'Star Wars', image: 'https://image.tmdb.org/t/p/original/4qC1maUvldMtsWzDShlAmORmpvP.jpg' },
+    { id: 86311, name: 'Universo Marvel', image: 'https://image.tmdb.org/t/p/original/mdf6322h31db5Z095729c065f50.jpg' },
+    { id: 9485, name: 'Velozes & Furiosos', image: 'https://image.tmdb.org/t/p/original/z5A5W3WYJc3UVEWljSGwdjDgQ0j.jpg' },
+    { id: 119, name: 'O Senhor dos Anéis', image: 'https://image.tmdb.org/t/p/original/bccR2CGTWVSSZDO7S5cVruhHVk9.jpg' },
+    { id: 131635, name: 'Jogos Vorazes', image: 'https://image.tmdb.org/t/p/original/yDbyMx8x356066q316f1562M66q.jpg' }
 ];
 
 const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
   const currentProfile = useContext(ProfileContext);
   const [trending, setTrending] = useState<Movie[]>([]);
+  const [horrorMovies, setHorrorMovies] = useState<Movie[]>([]); // Estado para Terror
   const [watchHistory, setWatchHistory] = useState<WatchHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [inList, setInList] = useState(false);
@@ -54,6 +56,12 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
         }
 
         setTrending(results);
+        
+        // Fetch Horror Movies (Genre ID 27) se não for perfil Kids
+        if (!currentProfile.is_kid) {
+            const horror = await tmdb.discoverByGenre(27, 'movie');
+            setHorrorMovies(horror);
+        }
         
         // Fetch history (Profile Scoped)
         const history = await storageService.getHistory(currentProfile.id);
@@ -94,6 +102,10 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
 
   const handleSagaClick = (id: number) => {
       window.location.hash = `#/collection/${id}`;
+  };
+
+  const handleGenreClick = (id: number, name: string) => {
+      window.location.hash = `#/genre/${id}/${encodeURIComponent(name)}`;
   };
 
   const handleHistoryClick = async (item: WatchHistoryItem) => {
@@ -399,7 +411,7 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
             </section>
           )}
 
-          {/* SECTION: Sagas (NEW) */}
+          {/* SECTION: Sagas (Updated) */}
           {!currentProfile?.is_kid && (
               <section className="pl-4 lg:pl-16">
                   <h2 className="text-white text-lg md:text-xl font-display font-bold tracking-tight mb-6 flex items-center gap-2">
@@ -423,6 +435,32 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
                               </div>
                               <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-primary to-blue-500 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left"></div>
                           </div>
+                      ))}
+                  </div>
+              </section>
+          )}
+
+          {/* SECTION: HORROR (NEW) */}
+          {!currentProfile?.is_kid && horrorMovies.length > 0 && (
+              <section className="pl-4 lg:pl-16">
+                  <div className="flex items-center justify-between pr-4 mb-4">
+                      <h2 className="text-white text-lg md:text-xl font-display font-bold tracking-tight flex items-center gap-2">
+                          <span className="material-symbols-rounded text-red-600">skull</span>
+                          Terror Sobrenatural
+                      </h2>
+                      <button onClick={() => handleGenreClick(27, 'Terror')} className="text-xs font-bold text-white/50 hover:text-white uppercase tracking-wider flex items-center gap-1 group">
+                          Ver Mais
+                          <span className="material-symbols-rounded text-sm group-hover:translate-x-1 transition-transform">arrow_forward</span>
+                      </button>
+                  </div>
+                  <div className="flex overflow-x-auto gap-3 pb-8 pr-4 hide-scrollbar snap-x">
+                      {horrorMovies.map(item => (
+                        <div key={item.id} onClick={() => handleClick(item)} className="relative flex-none w-[140px] aspect-[2/3] rounded-lg overflow-hidden group cursor-pointer ring-1 ring-white/5 hover:ring-red-600/50 transition-all duration-300 snap-start">
+                            <img src={tmdb.getPosterUrl(item.poster_path)} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt={getTitle(item)} />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
+                                <p className="text-white text-xs font-bold truncate">{getTitle(item)}</p>
+                            </div>
+                        </div>
                       ))}
                   </div>
               </section>

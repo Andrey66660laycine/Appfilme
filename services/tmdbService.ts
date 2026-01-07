@@ -50,9 +50,10 @@ export const tmdb = {
     }
   },
 
-  discoverByGenre: async (genreId: number, type: 'movie' | 'tv' = 'movie'): Promise<Movie[]> => {
+  // ATUALIZADO: Suporte a paginação (page)
+  discoverByGenre: async (genreId: number, type: 'movie' | 'tv' = 'movie', page: number = 1): Promise<Movie[]> => {
     try {
-        const res = await fetch(`${BASE_URL}/discover/${type}?api_key=${API_KEY}&language=${LANG}&with_genres=${genreId}&sort_by=popularity.desc&include_adult=false`);
+        const res = await fetch(`${BASE_URL}/discover/${type}?api_key=${API_KEY}&language=${LANG}&with_genres=${genreId}&sort_by=popularity.desc&include_adult=false&page=${page}`);
         const data = await res.json();
         // Mapeia para adicionar media_type pois o discover não retorna isso explicitamente sempre
         return (data.results || []).map((item: any) => ({ ...item, media_type: type }));
@@ -73,7 +74,7 @@ export const tmdb = {
       }
   },
 
-  // NOVA FUNÇÃO: Busca detalhes de uma coleção (Saga)
+  // Busca detalhes de uma coleção (Saga)
   getCollection: async (collectionId: number): Promise<any | null> => {
       try {
           const res = await fetch(`${BASE_URL}/collection/${collectionId}?api_key=${API_KEY}&language=${LANG}`);

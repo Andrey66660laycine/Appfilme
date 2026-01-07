@@ -8,7 +8,8 @@ import Welcome from './pages/Welcome';
 import Library from './pages/Library';
 import ProfileGateway from './pages/ProfileGateway';
 import PrivacyPolicy from './pages/PrivacyPolicy';
-import CollectionDetails from './pages/CollectionDetails'; // Import New Page
+import CollectionDetails from './pages/CollectionDetails';
+import GenreExplorer from './pages/GenreExplorer'; // Nova Página
 import SplashScreen from './components/SplashScreen'; 
 import { tmdb } from './services/tmdbService';
 import { storageService } from './services/storageService';
@@ -438,6 +439,12 @@ const App: React.FC = () => {
     if (hash.startsWith('#/collection/')) {
       const id = hash.replace('#/collection/', '');
       return <CollectionDetails id={id} onMovieClick={(id, type) => handleItemClick(id, type)} />;
+    }
+    if (hash.startsWith('#/genre/')) {
+      const parts = hash.replace('#/genre/', '').split('/');
+      const id = parts[0];
+      const name = decodeURIComponent(parts[1] || 'Gênero');
+      return <GenreExplorer genreId={Number(id)} genreName={name} onMovieClick={(id, type) => handleItemClick(id, type)} />;
     }
     if (hash.startsWith('#/search/')) {
       const query = decodeURIComponent(hash.replace('#/search/', ''));

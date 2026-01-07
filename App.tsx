@@ -9,8 +9,9 @@ import Library from './pages/Library';
 import ProfileGateway from './pages/ProfileGateway';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import CollectionDetails from './pages/CollectionDetails';
-import GenreExplorer from './pages/GenreExplorer'; // Nova Página
+import GenreExplorer from './pages/GenreExplorer';
 import SplashScreen from './components/SplashScreen'; 
+import AppDownloadModal from './components/AppDownloadModal'; // IMPORTADO
 import { tmdb } from './services/tmdbService';
 import { storageService } from './services/storageService';
 import { supabase } from './services/supabase';
@@ -42,6 +43,9 @@ const App: React.FC = () => {
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
   const [showSplash, setShowSplash] = useState(true);
   
+  // App Download Modal State
+  const [showAppModal, setShowAppModal] = useState(false);
+  
   // Player States
   const [playerState, setPlayerState] = useState<PlayerState | null>(null);
   const [showPlayerControls, setShowPlayerControls] = useState(true);
@@ -61,6 +65,28 @@ const App: React.FC = () => {
   const controlsTimeoutRef = useRef<number | null>(null);
   const adContainerRef = useRef<HTMLDivElement>(null);
   const loaderTimeoutRef = useRef<number | null>(null);
+
+  // --- APP DOWNLOAD MODAL CHECK ---
+  useEffect(() => {
+    // Só verifica depois que o splash sair (simulado aqui, mas controlado na renderização)
+    if (!showSplash && session && currentProfile) {
+        const hasInstalled = localStorage.getItem('void_app_installed');
+        if (hasInstalled !== 'true') {
+            // Pequeno delay para não ser intrusivo logo de cara
+            const timer = setTimeout(() => {
+                setShowAppModal(true);
+            }, 3000);
+            return () => clearTimeout(timer);
+        }
+    }
+  }, [showSplash, session, currentProfile]);
+
+  const handleCloseAppModal = (dontShowAgain: boolean) => {
+      setShowAppModal(false);
+      if (dontShowAgain) {
+          localStorage.setItem('void_app_installed', 'true');
+      }
+  };
 
   // --- AUTH CHECK ---
   useEffect(() => {
@@ -467,6 +493,11 @@ const App: React.FC = () => {
   return (
     <ProfileContext.Provider value={currentProfile}>
       
+      {/* APP DOWNLOAD MODAL */}
+      {showAppModal && !playerState && !showAds && !showServerNotice && !showSplash && (
+          <AppDownloadModal onClose={handleCloseAppModal} />
+      )}
+
       {/* SERVER NOTICE MODAL */}
       {showServerNotice && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">

@@ -214,13 +214,6 @@ const MovieDetails: React.FC<MovieDetailsProps> = ({ id, onPlay }) => {
             </div>
             <span className="text-[10px] text-white/50 group-hover:text-white uppercase tracking-wide">Compartilhar</span>
           </button>
-          
-          <button onClick={() => showToast('downloading', 'Download iniciado...')} className="flex flex-col items-center gap-1 group active:scale-90 transition-transform">
-            <div className="p-2 rounded-full hover:bg-white/10 transition-colors text-white">
-              <span className="material-symbols-rounded text-2xl">download</span>
-            </div>
-            <span className="text-[10px] text-white/50 group-hover:text-white uppercase tracking-wide">Baixar</span>
-          </button>
         </div>
 
         {/* TABS SYSTEM */}

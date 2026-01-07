@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, FormEvent } from 'react';
 import { tmdb } from '../services/tmdbService';
 import { supabase } from '../services/supabase';
@@ -202,8 +203,10 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
                     Entrar no Void
                 </button>
                 
-                <p className="text-[10px] text-white/20 uppercase tracking-widest mt-4">
-                    Privacidade • Termos • Suporte
+                <p className="text-[10px] text-white/20 uppercase tracking-widest mt-4 flex items-center gap-2">
+                    <button onClick={() => window.location.hash = '#/privacy'} className="hover:text-white transition-colors">Política de Privacidade</button>
+                    <span>•</span>
+                    <span>Suporte</span>
                 </p>
              </div>
           )}

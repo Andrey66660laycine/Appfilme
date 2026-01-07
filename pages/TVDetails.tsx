@@ -300,9 +300,6 @@ const TVDetails: React.FC<TVDetailsProps> = ({ id, onPlay }) => {
                             <div className="flex-1 flex flex-col justify-center gap-1.5">
                                 <div className="flex justify-between items-start">
                                     <h3 className="text-white font-bold text-base leading-tight group-hover:text-primary transition-colors">{ep.episode_number}. {ep.name}</h3>
-                                    <button className="text-white/30 hover:text-white transition-colors p-1" onClick={(e) => { e.stopPropagation(); showToast('download', 'Baixando episódio...'); }}>
-                                        <span className="material-symbols-rounded text-xl">download</span>
-                                    </button>
                                 </div>
                                 <span className="text-white/40 text-xs font-medium">S{selectedSeason} E{ep.episode_number} • {ep.air_date ? new Date(ep.air_date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }) : 'TBA'}</span>
                                 <p className="text-white/60 text-xs leading-relaxed line-clamp-2">{ep.overview || "Sem descrição disponível."}</p>

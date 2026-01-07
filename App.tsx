@@ -7,6 +7,7 @@ import TVDetails from './pages/TVDetails';
 import Welcome from './pages/Welcome';
 import Library from './pages/Library';
 import ProfileGateway from './pages/ProfileGateway';
+import PrivacyPolicy from './pages/PrivacyPolicy'; // Import New Page
 import SplashScreen from './components/SplashScreen'; 
 import { tmdb } from './services/tmdbService';
 import { storageService } from './services/storageService';
@@ -188,13 +189,9 @@ const App: React.FC = () => {
             window.removeEventListener('mousemove', resetControls);
             window.removeEventListener('touchstart', resetControls);
             if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-            // CRITICAL FIX: Do NOT clear loaderTimeoutRef here. 
-            // Updating playerState (e.g. adding title) triggers this cleanup, killing the loader timer.
-            // The loader timer should only be cleared when closing the player or manually by startVideoPlayer.
         };
     } else {
         setNextEpisode(null);
-        // Clean up loader if player is closed completely
         if (loaderTimeoutRef.current) {
             clearTimeout(loaderTimeoutRef.current);
             loaderTimeoutRef.current = null;
@@ -411,6 +408,21 @@ const App: React.FC = () => {
 
   // --- RENDER CONTENT ---
   const renderContent = () => {
+    // PUBLIC ROUTES
+    if (hash === '#/privacy') {
+        return <PrivacyPolicy />;
+    }
+
+    // PROTECTED ROUTES
+    if (!session) return <Welcome onStart={handleStartApp} />;
+    
+    // Show Splash Screen initially after auth
+    if (showSplash) return <SplashScreen onFinish={() => setShowSplash(false)} />;
+    
+    // Profile Selection
+    if (!currentProfile) return <ProfileGateway onProfileSelect={handleProfileSelect} onLogout={handleLogout} />;
+
+    // Main App Routes
     if (!hash || hash === '#/') {
       return <Home onMovieClick={(id, type) => handleItemClick(id, type)} onPlayVideo={handlePlayRequest} />;
     }
@@ -429,19 +441,16 @@ const App: React.FC = () => {
     if (hash === '#/library') {
       return <Library onMovieClick={(id, type) => handleItemClick(id, type)} />;
     }
+    
+    // Default
     return <Home onMovieClick={(id, type) => handleItemClick(id, type)} onPlayVideo={handlePlayRequest} />;
   };
 
   const isSearchActive = hash.startsWith('#/search/');
   const isLibraryActive = hash === '#/library';
+  const isPrivacyPage = hash === '#/privacy';
 
   if (loading) return null;
-  if (!session) return <Welcome onStart={handleStartApp} />;
-  
-  // Show Splash Screen initially
-  if (showSplash) return <SplashScreen onFinish={() => setShowSplash(false)} />;
-  
-  if (!currentProfile) return <ProfileGateway onProfileSelect={handleProfileSelect} onLogout={handleLogout} />;
 
   return (
     <ProfileContext.Provider value={currentProfile}>
@@ -540,6 +549,9 @@ const App: React.FC = () => {
                         <p className="text-white/30 text-[10px] uppercase tracking-widest mt-2 animate-pulse">
                             Dica: Se não carregar, troque de servidor no player
                         </p>
+                         <p className="text-red-400/70 text-[10px] uppercase tracking-widest mt-1">
+                            Aviso: Alguns conteúdos podem estar indisponíveis temporariamente
+                        </p>
                     </div>
                 </div>
             </div>
@@ -580,7 +592,7 @@ const App: React.FC = () => {
       )}
 
       {/* NAVBAR */}
-      {!isSearchActive && !isLibraryActive && !playerState && !showAds && !showServerNotice && (
+      {!isSearchActive && !isLibraryActive && !playerState && !showAds && !showServerNotice && !isPrivacyPage && currentProfile && (
         <nav id="navbar" className="fixed top-0 left-0 w-full z-40 transition-all duration-300 px-4 py-4 lg:px-8">
             <div className="max-w-7xl mx-auto flex items-center justify-between">
                 <div className="flex items-center gap-2 cursor-pointer group" onClick={handleGoHome}>
@@ -608,7 +620,7 @@ const App: React.FC = () => {
       {!playerState && !showAds && !showServerNotice && renderContent()}
 
       {/* MOBILE NAV */}
-      {!playerState && !showAds && !showServerNotice && (
+      {!playerState && !showAds && !showServerNotice && !isPrivacyPage && currentProfile && (
         <div className="fixed bottom-0 left-0 w-full bg-black/90 backdrop-blur-xl border-t border-white/5 pb-safe pt-2 px-6 z-50 rounded-t-2xl lg:hidden">
             <div className="flex justify-between items-center pb-2">
                 <button onClick={handleGoHome} className={`flex flex-col items-center gap-1 group w-16 ${(hash === '#/' || !hash) ? 'text-white' : 'text-white/30'}`}>

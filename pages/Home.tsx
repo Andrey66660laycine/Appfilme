@@ -18,6 +18,9 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
   const [loading, setLoading] = useState(true);
   const [inList, setInList] = useState(false);
   const [showAIModal, setShowAIModal] = useState(false);
+  const [showBugModal, setShowBugModal] = useState(false);
+  const [bugDescription, setBugDescription] = useState('');
+  const [showBanner, setShowBanner] = useState(true);
   
   // State for tabs
   const [activeTab, setActiveTab] = useState<'all' | 'movie' | 'tv' | 'originals'>('all');
@@ -178,11 +181,29 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
       }
   };
 
+  const submitBugReport = () => {
+      // Simulação de envio
+      alert("Relatório enviado com sucesso! Obrigado por ajudar a melhorar o Void Max.");
+      setShowBugModal(false);
+      setBugDescription('');
+  }
+
   const getTitle = (item: Movie) => item.title || (item as any).name || 'Untitled';
   const getDate = (item: Movie) => (item.release_date || (item as any).first_air_date || '').split('-')[0];
 
   return (
     <div className="animate-fade-in relative">
+
+      {/* GLOBAL BANNER */}
+      {showBanner && (
+          <div className="relative z-50 bg-gradient-to-r from-blue-900 to-primary/80 text-white text-xs font-bold px-4 py-2 flex items-center justify-center text-center animate-slide-up shadow-lg border-b border-white/10">
+              <span className="material-symbols-rounded text-sm mr-2 animate-pulse">info</span>
+              <span>Atenção: Alguns títulos podem estar indisponíveis temporariamente. Estamos atualizando o catálogo.</span>
+              <button onClick={() => setShowBanner(false)} className="absolute right-2 p-1 hover:bg-white/20 rounded-full transition-colors">
+                  <span className="material-symbols-rounded text-sm">close</span>
+              </button>
+          </div>
+      )}
       
       {/* AI SUGGESTION MODAL */}
       {showAIModal && (
@@ -192,6 +213,34 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
             history={watchHistory}
             isKid={currentProfile?.is_kid || false}
           />
+      )}
+
+      {/* BUG REPORT MODAL */}
+      {showBugModal && (
+          <div className="fixed inset-0 z-[160] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+              <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-pop-in">
+                  <div className="flex justify-between items-center mb-4">
+                      <h2 className="text-xl font-display font-bold text-white flex items-center gap-2">
+                          <span className="material-symbols-rounded text-red-500">bug_report</span>
+                          Reportar Problema
+                      </h2>
+                      <button onClick={() => setShowBugModal(false)} className="text-white/50 hover:text-white transition-colors">
+                          <span className="material-symbols-rounded">close</span>
+                      </button>
+                  </div>
+                  <p className="text-white/60 text-sm mb-4">Encontrou um erro ou algo não funciona? Descreva abaixo:</p>
+                  <textarea 
+                    value={bugDescription}
+                    onChange={(e) => setBugDescription(e.target.value)}
+                    placeholder="Descreva o problema aqui..." 
+                    className="w-full h-32 bg-black/40 border border-white/10 rounded-lg p-3 text-white text-sm focus:outline-none focus:border-primary resize-none mb-4"
+                  />
+                  <div className="flex justify-end gap-3">
+                      <button onClick={() => setShowBugModal(false)} className="px-4 py-2 text-white/60 hover:text-white text-sm font-bold">Cancelar</button>
+                      <button onClick={submitBugReport} className="px-6 py-2 bg-white text-black rounded-lg font-bold text-sm hover:bg-gray-200 transition-colors">Enviar Relatório</button>
+                  </div>
+              </div>
+          </div>
       )}
 
       {/* FLOATING ACTION BUTTON (AI) */}
@@ -221,6 +270,18 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
           <div className="absolute inset-0 bg-gradient-to-t from-background-dark via-background-dark/30 to-transparent"></div>
           <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-transparent"></div>
           <div className="absolute inset-0 bg-gradient-to-r from-background-dark/80 via-transparent to-transparent"></div>
+
+          {/* Report Bug Button (Absolute top right) */}
+          <div className="absolute top-24 right-4 md:right-8 z-30">
+              <button 
+                onClick={() => setShowBugModal(true)}
+                className="flex items-center gap-2 bg-black/40 hover:bg-red-500/20 backdrop-blur-md border border-white/10 hover:border-red-500/50 px-3 py-1.5 rounded-full transition-all group"
+                title="Reportar Bug"
+              >
+                  <span className="material-symbols-rounded text-white/50 group-hover:text-red-400 text-sm">bug_report</span>
+                  <span className="text-[10px] font-bold text-white/50 group-hover:text-white uppercase tracking-wider hidden md:block">Reportar Bug</span>
+              </button>
+          </div>
 
           {/* Hero Content */}
           <div className="absolute bottom-0 left-0 w-full p-6 pb-12 lg:pb-20 flex flex-col items-start lg:items-start lg:pl-16 z-10 max-w-7xl mx-auto opacity-0 animate-slide-up">

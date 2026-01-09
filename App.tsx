@@ -74,7 +74,6 @@ const App: React.FC = () => {
           const history = await storageService.getHistory(currentProfile.id);
           if (history.length > 0) {
               const last = history[0];
-              // Se tiver progresso e não acabou (entre 5% e 90%)
               const duration = last.duration || 0;
               const progress = last.progress || 0;
               const pct = duration > 0 ? (progress / duration) : 0;
@@ -99,32 +98,25 @@ const App: React.FC = () => {
       return () => window.removeEventListener('achievement_unlocked', handleUnlock);
   }, []);
 
-  // --- SNIFFER REMOVIDO ---
-  // O código que interceptava window.fetch e XMLHttpRequest foi removido para evitar tela preta e instabilidade.
-  // Agora o app depende puramente do fluxo nativo ou do player embed.
-
-  // --- NATIVE BRIDGE (Apenas para Receber Vídeo Direto se o App Nativo injetar) ---
+  // --- NATIVE BRIDGE FIX (Ouvindo link do Android) ---
   useEffect(() => {
+    // Definir a função globalmente para o Java chamar
     window.receberVideo = (url: string) => {
-        if (isPlayerStable) return;
-        if (failedUrls.has(url)) return;
-        if (nativeVideoUrl === url) return;
-        if (url && (url.startsWith('http') || url.startsWith('blob'))) {
+        console.log("Vídeo sniffado recebido:", url);
+        if (url) {
             setNativeVideoUrl(url);
+            // Se o player estiver aberto, isso força o reload com a nova URL
         }
     };
+
     return () => {
-        // @ts-ignore
-        delete window.receberVideo;
+        // Cleanup opcional, mas geralmente queremos manter viva
     };
-  }, [failedUrls, isPlayerStable, nativeVideoUrl]);
+  }, []);
 
   // --- APP DOWNLOAD MODAL CHECK ---
   useEffect(() => {
-    // Se window.Android existir, significa que já estamos no app nativo.
-    // Então NÃO mostramos o modal de download.
     const isNativeApp = !!window.Android;
-
     if (!showSplash && session && currentProfile && !isNativeApp) {
         const hasInstalled = localStorage.getItem('void_app_installed');
         if (hasInstalled !== 'true') {
@@ -245,7 +237,6 @@ const App: React.FC = () => {
 
             if (playerState.tmdbId) {
                 try {
-                    // USA O NOVO FILTRO DE RECOMENDAÇÕES DO SERVICE
                     const recs = await tmdb.getRecommendations(String(playerState.tmdbId), playerState.type);
                     setPlayerRecommendations(recs.slice(0, 5)); 
                 } catch (e) {

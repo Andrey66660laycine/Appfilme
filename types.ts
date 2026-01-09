@@ -98,11 +98,29 @@ export interface Profile {
   total_episodes_watched: number;
 }
 
+export interface DownloadItem {
+    id: string;
+    tmdbId: number;
+    title: string;
+    poster: string;
+    backdrop?: string;
+    type: 'movie' | 'tv';
+    season?: number;
+    episode?: number;
+    progress: number; // 0 a 100
+    status: 'pending' | 'downloading' | 'completed' | 'error';
+    path?: string; // Caminho local do arquivo
+    size?: string; // Ex: "1.2 GB"
+}
+
 declare global {
   interface Window {
     // Função chamada pelo Java/Android para injetar o vídeo (Entrada)
     receberVideo: (url: string) => void;
     
+    // Função chamada pelo Android para atualizar a lista de downloads
+    updateDownloadList: (jsonString: string) => void;
+
     // Interface para chamar funções do Android (Saída)
     Android?: {
         download: (url: string, title: string) => void;
@@ -112,6 +130,11 @@ declare global {
         onVideoPlaying?: (url: string) => void;
         // Avisa o app nativo que o player fechou (para retomar sniffers se necessário)
         onPlayerClosed?: () => void;
+        
+        // --- DOWNLOADS OFFLINE ---
+        getDownloads: () => void; // Solicita a lista
+        deleteDownload: (id: string) => void; // Apaga arquivo
+        playOffline: (path: string) => void; // Abre player offline nativo
     };
     
     onVideoDetected: (url: string) => void;

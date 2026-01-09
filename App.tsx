@@ -6,6 +6,7 @@ import MovieDetails from './pages/MovieDetails';
 import TVDetails from './pages/TVDetails';
 import Welcome from './pages/Welcome';
 import Library from './pages/Library';
+import Downloads from './pages/Downloads';
 import ProfileGateway from './pages/ProfileGateway';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import CollectionDetails from './pages/CollectionDetails';
@@ -98,40 +99,11 @@ const App: React.FC = () => {
       return () => window.removeEventListener('achievement_unlocked', handleUnlock);
   }, []);
 
-  // --- SNIFFER ---
-  useEffect(() => {
-    if (playerState && !nativeVideoUrl) {
-        const originalFetch = window.fetch;
-        const originalXHR = window.XMLHttpRequest.prototype.open;
+  // --- SNIFFER REMOVIDO ---
+  // O código que interceptava window.fetch e XMLHttpRequest foi removido para evitar tela preta e instabilidade.
+  // Agora o app depende puramente do fluxo nativo ou do player embed.
 
-        window.fetch = async (...args) => {
-            const [resource] = args;
-            const url = typeof resource === 'string' ? resource : (resource as Request).url;
-            checkUrlForVideo(url);
-            return originalFetch(...args);
-        };
-
-        window.XMLHttpRequest.prototype.open = function(method, url) {
-            if (typeof url === 'string') checkUrlForVideo(url);
-            return originalXHR.apply(this, arguments as any);
-        };
-
-        const checkUrlForVideo = (url: string) => {
-             if (url.match(/\.(mp4|m3u8|mkv)($|\?)/i)) {
-                 if (!failedUrls.has(url) && !isPlayerStable) {
-                     window.receberVideo(url);
-                 }
-             }
-        };
-
-        return () => {
-            window.fetch = originalFetch;
-            window.XMLHttpRequest.prototype.open = originalXHR;
-        };
-    }
-  }, [playerState, nativeVideoUrl, failedUrls, isPlayerStable]);
-
-  // --- NATIVE BRIDGE ---
+  // --- NATIVE BRIDGE (Apenas para Receber Vídeo Direto se o App Nativo injetar) ---
   useEffect(() => {
     window.receberVideo = (url: string) => {
         if (isPlayerStable) return;
@@ -149,7 +121,11 @@ const App: React.FC = () => {
 
   // --- APP DOWNLOAD MODAL CHECK ---
   useEffect(() => {
-    if (!showSplash && session && currentProfile) {
+    // Se window.Android existir, significa que já estamos no app nativo.
+    // Então NÃO mostramos o modal de download.
+    const isNativeApp = !!window.Android;
+
+    if (!showSplash && session && currentProfile && !isNativeApp) {
         const hasInstalled = localStorage.getItem('void_app_installed');
         if (hasInstalled !== 'true') {
             const timer = setTimeout(() => {
@@ -348,6 +324,7 @@ const App: React.FC = () => {
   const handleGoHome = () => { window.location.hash = '#/'; window.scrollTo(0,0); };
   const handleGoSearch = () => { window.location.hash = '#/search/'; window.scrollTo(0,0); }
   const handleGoLibrary = () => { window.location.hash = '#/library'; window.scrollTo(0,0); }
+  const handleGoDownloads = () => { window.location.hash = '#/downloads'; window.scrollTo(0,0); }
   const handleItemClick = (id: number, type: 'movie' | 'tv' = 'movie') => { window.location.hash = `#/${type}/${id}`; };
 
   const startVideoPlayer = async (config: PlayerState) => {
@@ -480,12 +457,14 @@ const App: React.FC = () => {
     }
     if (hash.startsWith('#/search/')) return <Search query={decodeURIComponent(hash.replace('#/search/', ''))} onMovieClick={handleItemClick} />;
     if (hash === '#/library') return <Library onMovieClick={handleItemClick} />;
+    if (hash === '#/downloads') return <Downloads />;
     
     return <Home onMovieClick={handleItemClick} onPlayVideo={handlePlayRequest} />;
   };
 
   const isSearchActive = hash.startsWith('#/search/');
   const isLibraryActive = hash === '#/library';
+  const isDownloadsActive = hash === '#/downloads';
   const isPrivacyPage = hash === '#/privacy';
 
   if (loading) return null;
@@ -503,7 +482,7 @@ const App: React.FC = () => {
                    const item = welcomeBackToast.item;
                    const conf = {
                        type: item.type,
-                       id: String(item.id), // Pode precisar de mapping se for filme e não tiver imdb_id salvo
+                       id: String(item.id), 
                        tmdbId: item.id,
                        season: item.season,
                        episode: item.episode,
@@ -647,7 +626,7 @@ const App: React.FC = () => {
       )}
 
       {/* NAVBAR */}
-      {!isSearchActive && !isLibraryActive && !playerState && !showAds && !showServerNotice && !isPrivacyPage && currentProfile && (
+      {!isSearchActive && !isLibraryActive && !isDownloadsActive && !playerState && !showAds && !showServerNotice && !isPrivacyPage && currentProfile && (
         <nav id="navbar" className="fixed top-0 left-0 w-full z-40 transition-all duration-300 px-4 py-4 lg:px-8">
             <div className="max-w-7xl mx-auto flex items-center justify-between">
                 <div className="flex items-center gap-2 cursor-pointer group" onClick={handleGoHome}>
@@ -676,23 +655,21 @@ const App: React.FC = () => {
       {!playerState && !showAds && !showServerNotice && !isPrivacyPage && currentProfile && (
         <div className="fixed bottom-0 left-0 w-full bg-black/90 backdrop-blur-xl border-t border-white/5 pb-safe pt-2 px-6 z-50 rounded-t-2xl lg:hidden">
             <div className="flex justify-between items-center pb-2">
-                <button onClick={handleGoHome} className={`flex flex-col items-center gap-1 group w-16 ${(hash === '#/' || !hash) ? 'text-white' : 'text-white/30'}`}>
+                <button onClick={handleGoHome} className={`flex flex-col items-center gap-1 group w-14 ${(hash === '#/' || !hash) ? 'text-white' : 'text-white/30'}`}>
                     <span className="material-symbols-rounded text-2xl group-hover:-translate-y-1 transition-transform">home</span>
-                    <span className="text-[10px] font-medium tracking-wide">INÍCIO</span>
+                    <span className="text-[9px] font-medium tracking-wide">INÍCIO</span>
                 </button>
-                <button onClick={handleGoSearch} className={`flex flex-col items-center gap-1 group w-16 ${isSearchActive ? 'text-white' : 'text-white/30'}`}>
+                <button onClick={handleGoSearch} className={`flex flex-col items-center gap-1 group w-14 ${isSearchActive ? 'text-white' : 'text-white/30'}`}>
                     <span className="material-symbols-rounded text-2xl group-hover:-translate-y-1 transition-transform">search</span>
-                    <span className="text-[10px] font-medium tracking-wide">BUSCAR</span>
+                    <span className="text-[9px] font-medium tracking-wide">BUSCAR</span>
                 </button>
-                <button onClick={handleGoLibrary} className={`flex flex-col items-center gap-1 group w-16 ${isLibraryActive ? 'text-white' : 'text-white/30'}`}>
+                <button onClick={handleGoDownloads} className={`flex flex-col items-center gap-1 group w-14 ${isDownloadsActive ? 'text-white' : 'text-white/30'}`}>
+                    <span className="material-symbols-rounded text-2xl group-hover:-translate-y-1 transition-transform">download</span>
+                    <span className="text-[9px] font-medium tracking-wide">OFFLINE</span>
+                </button>
+                <button onClick={handleGoLibrary} className={`flex flex-col items-center gap-1 group w-14 ${isLibraryActive ? 'text-white' : 'text-white/30'}`}>
                     <span className="material-symbols-rounded text-2xl group-hover:-translate-y-1 transition-transform">bookmarks</span>
-                    <span className="text-[10px] font-medium tracking-wide">LISTA</span>
-                </button>
-                <button onClick={() => setCurrentProfile(null)} className="text-white/30 flex flex-col items-center gap-1 group hover:text-white transition-colors w-16">
-                    <div className="size-6 rounded-full overflow-hidden border border-white/20 transition-colors">
-                        <img src={currentProfile.avatar} className="w-full h-full object-cover grayscale" alt="User" />
-                    </div>
-                    <span className="text-[10px] font-medium tracking-wide">PERFIL</span>
+                    <span className="text-[9px] font-medium tracking-wide">LISTA</span>
                 </button>
             </div>
         </div>

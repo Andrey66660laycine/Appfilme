@@ -98,20 +98,25 @@ const App: React.FC = () => {
       return () => window.removeEventListener('achievement_unlocked', handleUnlock);
   }, []);
 
-  // --- NATIVE BRIDGE FIX (Ouvindo link do Android) ---
+  // --- NATIVE BRIDGE FIX (CRÍTICO: Receber URL do Sniffer) ---
   useEffect(() => {
-    // Definir a função globalmente para o Java chamar
+    // Essa função é chamada pelo Android (Java/Kotlin) quando o sniffer acha o vídeo
     window.receberVideo = (url: string) => {
-        console.log("Vídeo sniffado recebido:", url);
-        if (url) {
+        console.log("Vídeo sniffado:", url);
+        
+        if (url && (url.startsWith('http') || url.startsWith('blob'))) {
+            // Força o player nativo a aparecer com a URL capturada
             setNativeVideoUrl(url);
-            // Se o player estiver aberto, isso força o reload com a nova URL
+            
+            // Oculta o iframe/embed para economizar recurso e evitar som duplo
+            setIsIframeLoaded(false); 
+            
+            // Se o playerState não estiver definido (caso raro), tenta definir algo básico
+            // mas geralmente o playerState já está lá porque o usuário clicou no filme
         }
     };
 
-    return () => {
-        // Cleanup opcional, mas geralmente queremos manter viva
-    };
+    // Cleanup não é necessário pois queremos que a função persista
   }, []);
 
   // --- APP DOWNLOAD MODAL CHECK ---
@@ -320,11 +325,12 @@ const App: React.FC = () => {
 
   const startVideoPlayer = async (config: PlayerState) => {
     setIsIframeLoaded(false);
-    setNativeVideoUrl(null); 
+    setNativeVideoUrl(null); // Reseta URL nativa ao abrir novo player
     setFailedUrls(new Set()); 
     setIsPlayerStable(false);
     setPendingPlayerState(null);
 
+    // Timeout para fallback visual se o iframe demorar
     if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
     loaderTimeoutRef.current = window.setTimeout(() => {
         setIsIframeLoaded(true);
@@ -414,11 +420,12 @@ const App: React.FC = () => {
       setIsPlayerStable(false);
       if (nativeVideoUrl) setFailedUrls(prev => new Set(prev).add(nativeVideoUrl));
       setNativeVideoUrl(null);
+      // Reativa o iframe se o nativo falhar
       setIsIframeLoaded(false); 
       if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
       loaderTimeoutRef.current = window.setTimeout(() => {
           setIsIframeLoaded(true);
-      }, 7000);
+      }, 5000);
   };
   
   const handlePlayerStable = () => {
@@ -428,6 +435,7 @@ const App: React.FC = () => {
 
   const getEmbedUrl = () => {
     if (!playerState) return '';
+    // Apenas a URL do embed, o Android vai interceptar o tráfego daqui
     if (playerState.type === 'movie') return `https://playerflixapi.com/filme/${playerState.id}`;
     return `https://playerflixapi.com/serie/${playerState.id}/${playerState.season}/${playerState.episode}`;
   };
@@ -469,7 +477,6 @@ const App: React.FC = () => {
       {welcomeBackToast.visible && welcomeBackToast.item && (
           <div className="fixed top-24 right-4 z-[999] bg-[#1a1a1a] border border-primary/50 rounded-xl p-4 shadow-2xl animate-slide-up flex gap-4 max-w-sm cursor-pointer hover:bg-[#252525] transition-colors"
                onClick={() => {
-                   // Play logic
                    const item = welcomeBackToast.item;
                    const conf = {
                        type: item.type,
@@ -477,7 +484,7 @@ const App: React.FC = () => {
                        tmdbId: item.id,
                        season: item.season,
                        episode: item.episode,
-                       initialTime: item.progress // Resume
+                       initialTime: item.progress
                    };
                    handlePlayRequest(conf as any);
                    setWelcomeBackToast({visible: false, item: null});
@@ -548,6 +555,7 @@ const App: React.FC = () => {
       )}
 
       {/* --- PLAYER NATIVO (Alta Prioridade) --- */}
+      {/* Se nativeVideoUrl existir (veio do sniffer), mostramos o CustomVideoPlayer */}
       {nativeVideoUrl && playerState && currentProfile && (
         <CustomVideoPlayer 
             src={nativeVideoUrl}
@@ -567,8 +575,11 @@ const App: React.FC = () => {
       )}
 
       {/* --- PLAYER EMBED (Fallback) --- */}
+      {/* Mostra o iframe apenas se não tiver URL nativa ainda e não tiver anúncio */}
       {playerState && !nativeVideoUrl && !showAds && !showServerNotice && (
         <div className="fixed inset-0 z-[100] bg-black animate-fade-in flex flex-col overflow-hidden">
+            
+            {/* Loading/Cover Screen for Embed */}
             <div className={`absolute inset-0 z-20 flex flex-col items-center justify-center bg-black transition-opacity duration-700 ease-in-out ${isIframeLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
                 {playerState.backdrop && (
                     <div className="absolute inset-0 bg-cover bg-center opacity-40 scale-110 blur-xl animate-pulse-slow" style={{backgroundImage: `url(${tmdb.getBackdropUrl(playerState.backdrop)})`}}></div>
@@ -583,25 +594,12 @@ const App: React.FC = () => {
                             <span className="text-xs uppercase tracking-[0.2em] text-primary font-bold">Conectando</span>
                         </div>
                         <p className="text-white/30 text-[10px] uppercase tracking-widest mt-2 animate-pulse">
-                            Tentando conexão segura...
+                            Aguardando sinal do servidor...
                         </p>
                     </div>
                 </div>
             </div>
             
-            {/* Controles para EMBED */}
-            {nextEpisode && (
-                <div className="absolute bottom-24 right-8 z-30 pointer-events-auto animate-slide-up">
-                    <button onClick={handleNextEpisode} className="bg-white/10 backdrop-blur-md border border-white/10 text-white px-6 py-3 rounded-full font-bold shadow-2xl flex items-center gap-3 hover:bg-white/20 transition-all group">
-                        <div className="flex flex-col items-start leading-none">
-                            <span className="text-[10px] uppercase font-bold text-white/50">Próximo</span>
-                            <span className="text-base">{nextEpisode.title}</span>
-                        </div>
-                        <span className="material-symbols-rounded">skip_next</span>
-                    </button>
-                </div>
-            )}
-
             <div className="flex-1 w-full h-full relative bg-black">
                  <iframe 
                     src={getEmbedUrl()} 

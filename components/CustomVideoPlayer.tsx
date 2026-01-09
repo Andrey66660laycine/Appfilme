@@ -71,9 +71,8 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const touchStartRef = useRef<{ x: number, y: number, time: number } | null>(null);
   const lastTapRef = useRef<{ time: number, x: number }>({ time: 0, x: 0 });
 
-  // --- ANDROID BRIDGE (CAST & DOWNLOAD) ---
+  // --- ANDROID INTEGRATION ---
   const handleCast = () => {
-    // Chama função nativa se existir
     if (window.Android && window.Android.castVideo) {
         try {
             console.log("Chamando Cast Nativo...");
@@ -81,7 +80,8 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
             return;
         } catch (e) { console.error("Erro Cast Android", e); }
     }
-    alert("Use o botão de transmitir do seu sistema.");
+    // Fallback apenas visual
+    alert("Função Cast: Use o ícone de transmissão do seu sistema.");
   };
 
   const handleDownload = () => {
@@ -90,7 +90,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
 
     const meta = {
         id: String(tmdbId || 0),
-        title: title || "Video",
+        title: title || "Download",
         type: type || 'movie',
         season: season || 0,
         episode: episode || 0,
@@ -100,17 +100,16 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
 
     if (window.Android && window.Android.download) {
         try {
-            console.log("Iniciando Download Nativo...");
             window.Android.download(src, JSON.stringify(meta));
             setTimeout(() => {
-                 onClose();
+                 onClose(); // Fecha o player para o usuário acompanhar o download na tela de downloads
                  if(window.Android?.onPlayerClosed) window.Android.onPlayerClosed();
             }, 1000);
             return;
-        } catch (e) { console.error("Erro Download Android", e); }
+        } catch (e) { console.error("Download Error", e); }
     }
     
-    // Fallback Navegador
+    // Browser Fallback
     const a = document.createElement('a');
     a.href = src;
     a.download = title || 'video.mp4';
@@ -125,6 +124,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   useEffect(() => {
     const loadData = async () => {
         if (!tmdbId) return;
+        
         try {
             let d;
             if (type === 'movie') d = await tmdb.getMovieDetails(String(tmdbId));
@@ -147,10 +147,8 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     const video = videoRef.current;
     if (!video) return;
 
-    console.log("Iniciando Player com URL:", src);
     setIsLoading(true);
     
-    // Configurações de HLS vs MP4
     if (src.includes('.m3u8')) {
         video.crossOrigin = "anonymous"; 
         if (window.Hls && window.Hls.isSupported()) {
@@ -170,16 +168,21 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
             });
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = src;
+            video.addEventListener('loadedmetadata', () => {
+                if (initialTime > 0) video.currentTime = initialTime;
+                video.play().catch(() => {});
+            });
         }
     } else {
         video.src = src;
+        video.load();
     }
 
     const onPlay = () => { 
         setPlaying(true); 
         setIsLoading(false);
         if (onPlayerStable) onPlayerStable();
-        // AVISAR O ANDROID QUE O VÍDEO PEGOU (PARA FECHAR SNIFFER)
+        // AVISAR O APP ANDROID QUE O VÍDEO TOCOU (PARA PARAR O SNIFFER)
         if (window.Android && window.Android.onVideoPlaying) {
              try { window.Android.onVideoPlaying(src); } catch(e) {}
         }
@@ -198,8 +201,14 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     video.addEventListener('waiting', onWaiting);
     video.addEventListener('canplay', onCanPlay);
     video.addEventListener('timeupdate', onTimeUpdate);
-    
-    // Tentar autoplay
+    video.addEventListener('loadedmetadata', () => {
+         setDuration(video.duration);
+         if (initialTime > 0 && Math.abs(video.currentTime - initialTime) > 2) {
+             video.currentTime = initialTime;
+         }
+    });
+
+    // Tentativa inicial de play
     video.play().catch(() => {});
 
     return () => {
@@ -229,7 +238,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                   } : { title }
               );
           }
-      }, 5000); // Salva a cada 5s
+      }, 5000);
       return () => clearInterval(interval);
   }, [playing, profileId, tmdbId, mediaDetails]);
 
@@ -269,9 +278,9 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       const dx = e.touches[0].clientX - touchStartRef.current.x;
       const dy = e.touches[0].clientY - touchStartRef.current.y;
       
-      // Movimento Vertical (Brilho/Volume)
+      // Se movimento vertical predominante
       if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
-          const delta = dy / window.innerHeight; 
+          const delta = dy / window.innerHeight; // Normalized delta
           const screenWidth = window.innerWidth;
           
           // Lado Esquerdo -> Brilho
@@ -303,16 +312,16 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       setGestureIndicator(null);
       const now = Date.now();
       
-      // Lógica de Duplo Toque (Avançar/Voltar)
+      // Double Tap Logic
       if (lastTapRef.current && (now - lastTapRef.current.time) < 300) {
           const x = e.changedTouches[0].clientX;
           const width = window.innerWidth;
           
           if (x < width * 0.35) {
-              seek(-10);
+              seek(-10); // Rewind
               setDoubleTapAnim({ side: 'left' });
           } else if (x > width * 0.65) {
-              seek(10);
+              seek(10); // Forward
               setDoubleTapAnim({ side: 'right' });
           } else {
               togglePlay();
@@ -323,6 +332,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       lastTapRef.current = { time: now, x: e.changedTouches[0].clientX };
   };
 
+  // --- ACTIONS ---
   const togglePlay = (e?: any) => {
       e?.stopPropagation();
       if (!videoRef.current) return;
@@ -386,7 +396,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
             playsInline
         />
 
-        {/* --- GESTURE FEEDBACK (Volume/Brightness) --- */}
+        {/* --- GESTURE INDICATORS (Volume/Brilho) --- */}
         {gestureIndicator && (
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/60 backdrop-blur-md rounded-2xl p-6 flex flex-col items-center gap-3 animate-fade-in z-50 pointer-events-none border border-white/10 shadow-2xl">
                 <span className="material-symbols-rounded text-4xl text-primary">
@@ -413,7 +423,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
             </div>
         )}
 
-        {/* --- LOADING --- */}
+        {/* --- LOADING SPINNER --- */}
         {isLoading && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
                  <div className="relative flex flex-col items-center">
@@ -459,7 +469,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
              </div>
         </div>
 
-        {/* --- MAIN CONTROLS OVERLAY --- */}
+        {/* --- CONTROLS UI --- */}
         {!isLocked && (
             <div className={`absolute inset-0 z-40 flex flex-col justify-between bg-gradient-to-b from-black/90 via-transparent to-black/90 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                 
@@ -476,7 +486,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                     </div>
                     
                     <div className="flex items-center gap-3">
-                        <button onClick={(e) => { e.stopPropagation(); handleCast(); }} className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors" title="Transmitir para TV">
+                        <button onClick={(e) => { e.stopPropagation(); handleCast(); }} className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors" title="Transmitir">
                             <span className="material-symbols-rounded text-2xl">cast</span>
                         </button>
                         <button onClick={(e) => { e.stopPropagation(); handleDownload(); }} className={`w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors ${isDownloading ? 'text-primary animate-pulse' : 'text-white'}`} title="Baixar">
@@ -531,7 +541,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                          <span>{formatTime(duration)}</span>
                      </div>
                      
-                     {/* PROGRESS BAR */}
+                     {/* SEEKBAR */}
                      <div className="relative h-6 group flex items-center cursor-pointer mb-2" onClick={(e) => e.stopPropagation()}>
                          <input 
                             type="range" 

@@ -45,31 +45,31 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [buffered, setBuffered] = useState(0);
   const [showControls, setShowControls] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isLocked, setIsLocked] = useState(false);
   const [fitMode, setFitMode] = useState<'contain' | 'cover'>('contain');
   
-  // Feature States
-  const [showPostPlay, setShowPostPlay] = useState(false); // RESTAURADO: Tela de fim de vídeo
-  const [showNextEpButton, setShowNextEpButton] = useState(false);
-  
-  // UI Features
+  // UI Panels
+  const [showSidePanel, setShowSidePanel] = useState(false); // Lista de Episodios/Relacionados
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+  
+  // Settings
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [volume, setVolume] = useState(1);
   const [brightness, setBrightness] = useState(1);
 
-  // Gestures
+  // Gestures & Feedback
   const [doubleTapAnimation, setDoubleTapAnimation] = useState<'left' | 'right' | null>(null);
   const [lastTapTime, setLastTapTime] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [volumeIndicator, setVolumeIndicator] = useState<number | null>(null);
   
-  // Data State
+  // Data
   const [mediaDetails, setMediaDetails] = useState<any>(null);
   const controlsTimeoutRef = useRef<number | null>(null);
 
-  // --- SAVE PROGRESS LOGIC ---
+  // --- SAVE PROGRESS ---
   const saveProgress = useCallback(async (force = false) => {
       if (!videoRef.current || !profileId || !tmdbId || !type) return;
       
@@ -83,13 +83,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
 
       if (ct > 5 || force) {
           await storageService.updateProgress(
-              profileId, 
-              tmdbId, 
-              type, 
-              progressToSave, 
-              dur, 
-              season, 
-              episode,
+              profileId, tmdbId, type, progressToSave, dur, season, episode,
               mediaDetails ? {
                   title: mediaDetails.title || mediaDetails.name,
                   poster_path: mediaDetails.poster_path,
@@ -100,21 +94,19 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       }
   }, [profileId, tmdbId, type, season, episode, mediaDetails, title]);
 
-  // Save loop
   useEffect(() => {
-      const interval = setInterval(() => saveProgress(), 15000); 
+      const interval = setInterval(() => saveProgress(), 10000); 
       return () => {
           clearInterval(interval);
           saveProgress(true);
       };
   }, [saveProgress]);
 
-  // Save on Pause/Close
   useEffect(() => {
       if (!playing) saveProgress(true);
   }, [playing, saveProgress]);
 
-  // --- INITIALIZATION ---
+  // --- INIT ---
   useEffect(() => {
     const fetchDetails = async () => {
         if (!tmdbId) return;
@@ -133,9 +125,8 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     if (!video) return;
 
     setIsLoading(true);
-    setShowPostPlay(false); // Reset post play on src change
+    setShowSidePanel(false);
     
-    // Configura CrossOrigin para HLS correto
     if (src.includes('.m3u8')) video.crossOrigin = "anonymous";
     else video.removeAttribute('crossOrigin');
 
@@ -147,32 +138,27 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
         }
         video.play().then(() => {
             setPlaying(true);
-            // Avisa o App Android que o vídeo tocou (para fechar loading nativo/sniffers)
+            // NOTIFY ANDROID APP
             if (window.Android && window.Android.onVideoPlaying) {
                 try { window.Android.onVideoPlaying(src); } catch(e) {}
             }
         }).catch(() => setPlaying(false));
     };
 
-    const handleWaiting = () => setIsLoading(true);
-    const handleCanPlay = () => setIsLoading(false);
     const handlePlaying = () => { setIsLoading(false); setPlaying(true); if(onPlayerStable) onPlayerStable(); };
     const handlePause = () => setPlaying(false);
-    
     const handleError = () => {
         console.warn("Player Error, calling fallback");
-        if (hlsRef.current) hlsRef.current.destroy();
         if(onErrorFallback) onErrorFallback();
     };
     
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
-    video.addEventListener('waiting', handleWaiting);
-    video.addEventListener('canplay', handleCanPlay);
+    video.addEventListener('waiting', () => setIsLoading(true));
+    video.addEventListener('canplay', () => setIsLoading(false));
     video.addEventListener('playing', handlePlaying);
     video.addEventListener('pause', handlePause);
     video.addEventListener('error', handleError);
 
-    // HLS Support
     if (src.includes('.m3u8') && window.Hls && window.Hls.isSupported()) {
         const hls = new window.Hls({ debug: false, enableWorker: true, lowLatencyMode: true });
         hlsRef.current = hls;
@@ -195,15 +181,26 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     return () => {
         if (hlsRef.current) hlsRef.current.destroy();
         video.removeEventListener('loadedmetadata', handleLoadedMetadata);
-        video.removeEventListener('waiting', handleWaiting);
-        video.removeEventListener('canplay', handleCanPlay);
         video.removeEventListener('playing', handlePlaying);
         video.removeEventListener('pause', handlePause);
         video.removeEventListener('error', handleError);
     };
-  }, [src]); 
+  }, [src]);
 
-  // --- CONTROLS & GESTURES ---
+  // --- CONTROLS ---
+  const togglePlay = (e?: React.MouseEvent) => {
+      e?.stopPropagation();
+      if (!videoRef.current) return;
+      if (videoRef.current.paused) {
+          videoRef.current.play();
+          setPlaying(true);
+      } else {
+          videoRef.current.pause();
+          setPlaying(false);
+      }
+      resetControlsTimeout();
+  };
+
   const handleTouchEnd = (e: React.TouchEvent) => {
       if (isLocked) return;
       const now = Date.now();
@@ -212,7 +209,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       if (tapLength < 300 && tapLength > 0) {
           const touchX = e.changedTouches[0].clientX;
           const width = window.innerWidth;
-          
           if (touchX < width * 0.3) {
               skip(-10);
               setDoubleTapAnimation('left');
@@ -236,26 +232,13 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       }
   };
 
-  const togglePlay = (e?: React.MouseEvent) => {
-      e?.stopPropagation();
-      if (!videoRef.current) return;
-      if (videoRef.current.paused) {
-          videoRef.current.play();
-          setPlaying(true);
-      } else {
-          videoRef.current.pause();
-          setPlaying(false);
-      }
-      resetControlsTimeout();
-  };
-
   const resetControlsTimeout = useCallback(() => {
       setShowControls(true);
       if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-      if (playing && !isLocked && !showPostPlay) {
+      if (playing && !isLocked && !showSidePanel) {
           controlsTimeoutRef.current = window.setTimeout(() => setShowControls(false), 4000);
       }
-  }, [playing, isLocked, showPostPlay]);
+  }, [playing, isLocked, showSidePanel]);
 
   useEffect(() => {
       resetControlsTimeout();
@@ -271,78 +254,53 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       }
   };
 
-  const handleTimeUpdate = () => {
-      if(videoRef.current) {
-          const ct = videoRef.current.currentTime;
-          const d = videoRef.current.duration;
-          setCurrentTime(ct);
-          
-          // Logic for Next Episode Button
-          if(d > 0) {
-              const remaining = d - ct;
-              if (type === 'tv' && nextEpisode) {
-                  if (remaining < 60 && !showNextEpButton) setShowNextEpButton(true); // Show 60s before end
-                  if (remaining >= 60 && showNextEpButton) setShowNextEpButton(false);
-              }
-
-              // Logic for Post Play (Recommendations)
-              if ((remaining < 5 || ct > d * 0.99) && !showPostPlay) {
-                  setShowPostPlay(true);
-                  setShowControls(false);
-              }
-          }
-      }
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const vol = parseFloat(e.target.value);
+      setVolume(vol);
+      if (videoRef.current) videoRef.current.volume = vol;
+      setVolumeIndicator(Math.round(vol * 100));
+      setTimeout(() => setVolumeIndicator(null), 1000);
+      resetControlsTimeout();
   };
 
-  // --- DOWNLOAD ---
+  // --- CAST (TRANSMITIR) ---
+  const handleCast = () => {
+      // 1. Tenta Android Native Cast
+      if (window.Android && window.Android.castVideo) {
+          try {
+              window.Android.castVideo(src, title || "Video");
+              return;
+          } catch(e) { console.error("Android Cast falhou", e); }
+      }
+      
+      // 2. Fallback: Browser Alert (ou implementação futura de ChromeCast)
+      alert("Para transmitir, use o ícone de transmissão do seu navegador ou do aplicativo nativo.");
+  };
+
   const handleDownload = () => {
       if (isDownloading) return;
       setIsDownloading(true);
-
+      
+      // Lógica de download simplificada para brevidade, mantendo compatibilidade
       const safeTmdbId = tmdbId || 0;
       const safeType = type === 'tv' ? 'tv' : 'movie'; 
       const posterUrl = mediaDetails?.poster_path ? tmdb.getPosterUrl(mediaDetails.poster_path, 'w500') : '';
-      
       const payload = {
-          id: String(safeTmdbId),
-          title: title || "Video",
-          type: safeType,
-          season: safeType === 'tv' ? (season || 0) : 0,
-          episode: safeType === 'tv' ? (episode || 0) : 0,
-          poster: posterUrl,
-          backdrop: mediaDetails?.backdrop_path ? tmdb.getBackdropUrl(mediaDetails.backdrop_path, 'w780') : ''
+          id: String(safeTmdbId), title: title || "Video", type: safeType,
+          season: safeType === 'tv' ? (season || 0) : 0, episode: safeType === 'tv' ? (episode || 0) : 0,
+          poster: posterUrl, backdrop: mediaDetails?.backdrop_path ? tmdb.getBackdropUrl(mediaDetails.backdrop_path, 'w780') : ''
       };
 
       try {
           if (window.Android && window.Android.download) {
               window.Android.download(src, JSON.stringify(payload));
-              setTimeout(() => {
-                  onClose();
-                  if (window.Android?.onPlayerClosed) window.Android.onPlayerClosed();
-              }, 1500);
+              setTimeout(() => { onClose(); if(window.Android?.onPlayerClosed) window.Android.onPlayerClosed(); }, 1500);
           } else {
-              // Fallback Browser Download
-              const a = document.createElement('a');
-              a.href = src;
-              a.target = '_blank';
-              a.download = title || 'video';
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
+              const a = document.createElement('a'); a.href = src; a.target = '_blank'; a.download = title || 'video';
+              document.body.appendChild(a); a.click(); document.body.removeChild(a);
               setIsDownloading(false);
           }
       } catch (e) { setIsDownloading(false); }
-  };
-
-  const handleCast = () => {
-      if (window.Android && window.Android.castVideo) {
-          try {
-              window.Android.castVideo(src, title);
-          } catch(e) { console.error(e); }
-      } else {
-          // Browser Cast simulation
-          alert("Use o botão de transmitir do seu navegador ou app externo.");
-      }
   };
 
   const handleClosePlayer = () => {
@@ -363,37 +321,43 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   return (
     <div 
       ref={containerRef} 
-      className="fixed inset-0 z-[9999] bg-black overflow-hidden select-none font-body"
+      className="fixed inset-0 z-[9999] bg-black overflow-hidden select-none font-body group"
       onTouchEnd={handleTouchEnd}
       style={{ filter: `brightness(${brightness})` }}
     >
       <video
         ref={videoRef}
-        className={`w-full h-full object-${fitMode} transition-all duration-700 ease-in-out ${showPostPlay ? 'scale-75 opacity-40 blur-sm translate-y-[-10%]' : 'scale-100 opacity-100'}`}
-        onTimeUpdate={handleTimeUpdate}
+        className={`w-full h-full object-${fitMode} transition-all duration-300`}
+        onTimeUpdate={() => { if(videoRef.current) setCurrentTime(videoRef.current.currentTime); }}
         playsInline
       />
 
-      {/* DOUBLE TAP ANIMATION */}
+      {/* GESTURE ANIMATIONS */}
       {doubleTapAnimation && (
           <div className={`absolute top-1/2 -translate-y-1/2 ${doubleTapAnimation === 'left' ? 'left-20' : 'right-20'} z-50 flex flex-col items-center pointer-events-none animate-ping-once`}>
                <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center mb-2">
-                   <span className="material-symbols-rounded text-white text-3xl">
-                       {doubleTapAnimation === 'left' ? 'replay_10' : 'forward_10'}
-                   </span>
+                   <span className="material-symbols-rounded text-white text-3xl">{doubleTapAnimation === 'left' ? 'replay_10' : 'forward_10'}</span>
                </div>
                <span className="text-white font-bold text-xs shadow-black drop-shadow-md">10s</span>
           </div>
       )}
 
-      {/* LOADING */}
+      {/* VOLUME INDICATOR */}
+      {volumeIndicator !== null && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/60 backdrop-blur-md p-4 rounded-xl flex flex-col items-center animate-fade-in z-50">
+              <span className="material-symbols-rounded text-white text-3xl mb-2">{volume > 0.5 ? 'volume_up' : volume > 0 ? 'volume_down' : 'volume_off'}</span>
+              <div className="h-1 w-20 bg-white/30 rounded-full overflow-hidden">
+                  <div className="h-full bg-primary transition-all" style={{ width: `${volumeIndicator}%` }}></div>
+              </div>
+          </div>
+      )}
+
       {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
               <div className="w-16 h-16 border-4 border-white/20 border-t-primary rounded-full animate-spin"></div>
           </div>
       )}
 
-      {/* LOCKED STATE */}
       {isLocked && (
           <button onClick={() => setIsLocked(false)} className="absolute top-10 left-1/2 -translate-x-1/2 bg-white/10 backdrop-blur-md border border-white/20 px-4 py-2 rounded-full flex items-center gap-2 z-50 animate-pulse">
               <span className="material-symbols-rounded text-white">lock</span>
@@ -401,63 +365,36 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           </button>
       )}
 
-      {/* --- POST PLAY SCREEN (RESTAURADO) --- */}
-      {showPostPlay && (
-          <div className="absolute inset-x-0 bottom-0 h-[60%] z-[70] bg-gradient-to-t from-black via-black/95 to-transparent animate-slide-up flex flex-col justify-end pb-8 px-6 overflow-y-auto">
-              <div className="w-full max-w-5xl mx-auto">
-                  <div className="flex items-center justify-between mb-6">
-                      <div>
-                          <p className="text-white/50 text-xs font-bold uppercase tracking-widest mb-1">A seguir</p>
-                          <h2 className="text-2xl font-display font-bold text-white">Recomendações</h2>
-                      </div>
-                      <div className="flex gap-3">
-                          <button onClick={() => { setShowPostPlay(false); setShowControls(true); }} className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-full text-white text-sm font-bold">
-                              Voltar ao Vídeo
-                          </button>
-                          <button onClick={handleClosePlayer} className="px-6 py-2 bg-primary hover:bg-primary-hover text-white rounded-full text-sm font-bold">
-                              Fechar
-                          </button>
-                      </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                      {nextEpisode && (
-                          <div 
-                             onClick={() => { setShowPostPlay(false); nextEpisode.onPlay(); }}
-                             className="relative aspect-[16/9] rounded-xl overflow-hidden cursor-pointer group ring-2 ring-primary transition-all hover:scale-[1.02]"
-                          >
-                               <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
-                                   <div className="text-center">
-                                       <span className="material-symbols-rounded text-4xl text-white">play_circle</span>
-                                       <p className="text-white font-bold text-sm mt-2">Próximo Episódio</p>
-                                       <p className="text-white/70 text-xs">{nextEpisode.title}</p>
-                                   </div>
-                               </div>
-                          </div>
-                      )}
-                      
-                      {recommendations && recommendations.slice(0, nextEpisode ? 3 : 4).map((rec, i) => (
-                          <div 
-                             key={rec.id} 
-                             onClick={() => { onPlayRelated && onPlayRelated(rec); setShowPostPlay(false); }}
-                             className="relative aspect-[16/9] rounded-xl overflow-hidden cursor-pointer group ring-1 ring-white/10 hover:ring-primary/50 transition-all hover:scale-[1.02]"
-                          >
-                               <img src={tmdb.getBackdropUrl(rec.backdrop_path, 'w780')} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt="" />
-                               <div className="absolute inset-0 bg-black/40 group-hover:bg-transparent transition-colors flex items-center justify-center">
-                                   <span className="material-symbols-rounded text-4xl text-white opacity-0 group-hover:opacity-100 transition-all scale-50 group-hover:scale-100 drop-shadow-lg">play_arrow</span>
-                               </div>
-                               <div className="absolute bottom-0 left-0 w-full p-2 bg-gradient-to-t from-black to-transparent">
-                                   <p className="text-white text-xs font-bold truncate">{rec.title}</p>
-                               </div>
-                          </div>
-                      ))}
-                  </div>
-              </div>
+      {/* SIDE PANEL (Episodes/Related) */}
+      <div className={`absolute top-0 right-0 bottom-0 w-80 bg-[#121212]/95 backdrop-blur-xl border-l border-white/10 z-[60] transition-transform duration-300 transform ${showSidePanel ? 'translate-x-0' : 'translate-x-full'} flex flex-col`}>
+          <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <h3 className="text-white font-bold text-lg">{type === 'tv' ? 'Episódios' : 'Recomendações'}</h3>
+              <button onClick={() => setShowSidePanel(false)} className="text-white/50 hover:text-white"><span className="material-symbols-rounded">close</span></button>
           </div>
-      )}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {nextEpisode && (
+                  <div onClick={() => { nextEpisode.onPlay(); setShowSidePanel(false); }} className="bg-primary/20 border border-primary/50 p-3 rounded-lg cursor-pointer hover:bg-primary/30 transition-colors">
+                      <p className="text-primary text-xs font-bold uppercase mb-1">A Seguir</p>
+                      <p className="text-white font-medium text-sm">{nextEpisode.title}</p>
+                  </div>
+              )}
+              {recommendations?.map(item => (
+                  <div key={item.id} onClick={() => { onPlayRelated && onPlayRelated(item); setShowSidePanel(false); }} className="flex gap-3 items-center cursor-pointer group">
+                      <div className="w-20 aspect-video bg-gray-800 rounded overflow-hidden relative">
+                          <img src={tmdb.getBackdropUrl(item.backdrop_path, 'w300')} className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" />
+                          <div className="absolute inset-0 flex items-center justify-center"><span className="material-symbols-rounded text-white opacity-0 group-hover:opacity-100 text-xl drop-shadow-md">play_arrow</span></div>
+                      </div>
+                      <div className="flex-1">
+                          <p className="text-white text-sm font-medium line-clamp-2 group-hover:text-primary transition-colors">{item.title || (item as any).name}</p>
+                          <p className="text-white/40 text-xs">{(item.vote_average || 0).toFixed(1)} ★</p>
+                      </div>
+                  </div>
+              ))}
+          </div>
+      </div>
 
       {/* CONTROLS OVERLAY */}
-      {!isLocked && !showPostPlay && (
+      {!isLocked && (
         <div className={`absolute inset-0 bg-gradient-to-b from-black/80 via-transparent to-black/90 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'} flex flex-col justify-between z-40`}>
             
             {/* TOP BAR */}
@@ -466,108 +403,106 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                     <button onClick={handleClosePlayer} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors">
                         <span className="material-symbols-rounded text-white text-3xl">arrow_back</span>
                     </button>
-                    <div>
+                    <div className="max-w-[200px] md:max-w-md">
                         <h2 className="text-white font-bold text-base line-clamp-1 drop-shadow-md">{title}</h2>
                         {(season && episode) && <p className="text-white/60 text-xs">S{season}:E{episode}</p>}
                     </div>
                 </div>
                 
-                <div className="flex items-center gap-4">
-                    <button onClick={handleCast} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-white">
+                <div className="flex items-center gap-2">
+                    {/* CAST BUTTON - RESTORED & PROMINENT */}
+                    <button onClick={handleCast} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-white transition-colors" title="Transmitir">
                         <span className="material-symbols-rounded text-2xl">cast</span>
                     </button>
+                    
                     <button onClick={handleDownload} className={`w-10 h-10 flex items-center justify-center rounded-full transition-colors ${isDownloading ? 'text-primary animate-pulse' : 'text-white hover:bg-white/10'}`}>
                         <span className="material-symbols-rounded text-2xl">download</span>
                     </button>
-                    <button onClick={() => setFitMode(prev => prev === 'contain' ? 'cover' : 'contain')} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-white">
-                        <span className="material-symbols-rounded text-2xl">{fitMode === 'contain' ? 'fit_screen' : 'crop_free'}</span>
+                    
+                    <button onClick={() => setShowSidePanel(true)} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-white relative">
+                        <span className="material-symbols-rounded text-2xl">playlist_play</span>
+                        {nextEpisode && <div className="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full"></div>}
                     </button>
+
                     <button onClick={() => setIsLocked(true)} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-white">
                         <span className="material-symbols-rounded text-2xl">lock_open</span>
                     </button>
                 </div>
             </div>
 
-            {/* CENTER PLAY BUTTON */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto">
-                {!isLoading && (
-                    <button onClick={togglePlay} className="w-20 h-20 bg-black/40 backdrop-blur-sm border border-white/10 rounded-full flex items-center justify-center hover:scale-110 transition-transform group">
-                        <span className="material-symbols-rounded text-5xl text-white fill-1 ml-1">{playing ? 'pause' : 'play_arrow'}</span>
-                    </button>
-                )}
+            {/* SIDE SLIDERS (Desktop/Large Screens) */}
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 h-32 w-1.5 bg-white/20 rounded-full hidden md:block group/brightness">
+                <div className="absolute bottom-0 left-0 w-full bg-white rounded-full transition-all" style={{ height: `${brightness * 50}%` }}></div>
+                <input type="range" min="0.5" max="1.5" step="0.1" value={brightness} onChange={(e) => setBrightness(parseFloat(e.target.value))} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                <span className="absolute -top-8 left-1/2 -translate-x-1/2 text-white/0 group-hover/brightness:text-white/80 text-xs font-bold transition-opacity material-symbols-rounded">brightness_6</span>
             </div>
 
-            {/* NEXT EPISODE POPUP (Small Button) */}
-            {showNextEpButton && nextEpisode && (
-                <div className="absolute bottom-24 right-6 animate-slide-up pointer-events-auto">
-                    <button onClick={nextEpisode.onPlay} className="bg-white text-black pl-5 pr-3 py-3 rounded-full font-bold flex items-center gap-2 shadow-lg hover:scale-105 transition-transform group">
-                        <div className="flex flex-col items-start leading-none">
-                            <span className="text-[10px] text-gray-500 uppercase font-bold">A Seguir</span>
-                            <span className="text-sm font-black">{nextEpisode.title}</span>
-                        </div>
-                        <div className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center group-hover:bg-primary transition-colors">
-                            <span className="material-symbols-rounded text-xl">skip_next</span>
-                        </div>
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 h-32 w-1.5 bg-white/20 rounded-full hidden md:block group/volume">
+                <div className="absolute bottom-0 left-0 w-full bg-primary rounded-full transition-all" style={{ height: `${volume * 100}%` }}></div>
+                <input type="range" min="0" max="1" step="0.05" value={volume} onChange={handleVolumeChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                <span className="absolute -top-8 left-1/2 -translate-x-1/2 text-white/0 group-hover/volume:text-white/80 text-xs font-bold transition-opacity material-symbols-rounded">volume_up</span>
+            </div>
+
+            {/* CENTER CONTROLS */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-8 pointer-events-auto">
+                <button onClick={() => skip(-10)} className="text-white/70 hover:text-white transition-transform hover:scale-110 active:scale-95"><span className="material-symbols-rounded text-5xl">replay_10</span></button>
+                
+                {!isLoading ? (
+                    <button onClick={togglePlay} className="w-20 h-20 bg-white/10 backdrop-blur-md border border-white/20 rounded-full flex items-center justify-center hover:bg-white/20 transition-all hover:scale-110 active:scale-95 group">
+                        <span className="material-symbols-rounded text-6xl text-white fill-1 ml-1">{playing ? 'pause' : 'play_arrow'}</span>
                     </button>
-                </div>
-            )}
+                ) : (
+                    <div className="w-20 h-20 flex items-center justify-center"><div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin"></div></div>
+                )}
+
+                <button onClick={() => skip(10)} className="text-white/70 hover:text-white transition-transform hover:scale-110 active:scale-95"><span className="material-symbols-rounded text-5xl">forward_10</span></button>
+            </div>
 
             {/* BOTTOM BAR */}
             <div className="p-4 pb-8 md:p-8 pointer-events-auto bg-gradient-to-t from-black/90 to-transparent">
-                <div className="flex items-center justify-between text-xs font-bold text-white/80 mb-2 px-1">
+                <div className="flex items-center justify-between text-xs font-bold text-white/80 mb-3 px-1 font-mono">
                     <span>{formatTime(currentTime)}</span>
                     <span>{formatTime(duration)}</span>
                 </div>
                 
                 {/* SEEKBAR */}
-                <div className="relative h-6 group flex items-center cursor-pointer">
+                <div className="relative h-6 group flex items-center cursor-pointer mb-2">
                     <input 
-                        type="range" 
-                        min="0" 
-                        max={duration || 100} 
-                        value={currentTime} 
-                        onChange={handleSeek} 
+                        type="range" min="0" max={duration || 100} value={currentTime} onChange={handleSeek} 
                         className="absolute inset-0 w-full opacity-0 cursor-pointer z-20"
                     />
-                    <div className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden relative">
-                         <div className="h-full bg-primary relative transition-all" style={{ width: `${(currentTime / duration) * 100}%` }}>
+                    <div className="w-full h-1 bg-white/20 rounded-full overflow-hidden relative group-hover:h-1.5 transition-all">
+                         <div className="h-full bg-gradient-to-r from-primary to-purple-500 relative transition-all shadow-[0_0_10px_#f20df2]" style={{ width: `${(currentTime / duration) * 100}%` }}>
                              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg scale-0 group-hover:scale-150 transition-transform"></div>
                          </div>
                     </div>
                 </div>
 
-                <div className="flex items-center justify-between mt-2">
-                    <div className="flex items-center gap-6">
-                        <button onClick={() => setShowPostPlay(true)} className="text-white/70 hover:text-white flex items-center gap-1 text-xs font-bold">
-                            <span className="material-symbols-rounded text-lg">grid_view</span>
-                            <span className="hidden sm:inline">Episódios</span>
-                        </button>
-                    </div>
-
+                <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <button onClick={() => skip(-10)} className="text-white hover:text-white/80"><span className="material-symbols-rounded text-3xl">replay_10</span></button>
-                        <button onClick={togglePlay} className="text-white hover:text-primary"><span className="material-symbols-rounded text-4xl fill-1">{playing ? 'pause' : 'play_arrow'}</span></button>
-                        <button onClick={() => skip(10)} className="text-white hover:text-white/80"><span className="material-symbols-rounded text-3xl">forward_10</span></button>
+                        <button onClick={() => setFitMode(prev => prev === 'contain' ? 'cover' : 'contain')} className="text-white/70 hover:text-white flex items-center gap-1 text-xs font-bold bg-white/5 px-2 py-1 rounded hover:bg-white/10 transition-colors">
+                            <span className="material-symbols-rounded text-sm">{fitMode === 'contain' ? 'fit_screen' : 'crop_free'}</span>
+                            <span className="hidden sm:inline">Aspecto</span>
+                        </button>
                     </div>
 
                     <div className="flex items-center gap-4 relative">
-                        <button onClick={() => setShowSpeedMenu(!showSpeedMenu)} className="bg-white/10 px-3 py-1 rounded text-xs font-bold text-white hover:bg-white/20">
-                            {playbackSpeed}x
+                        <button onClick={() => setShowSpeedMenu(!showSpeedMenu)} className="text-white font-bold text-xs hover:text-primary transition-colors flex items-center gap-1">
+                            {playbackSpeed}x <span className="material-symbols-rounded text-sm">speed</span>
                         </button>
+                        
                         {showSpeedMenu && (
-                            <div className="absolute bottom-full right-0 mb-2 bg-[#1a1a1a] border border-white/10 rounded-lg overflow-hidden w-20 animate-fade-in-up">
-                                {[0.5, 1.0, 1.5, 2.0].map(s => (
-                                    <button key={s} onClick={() => { if(videoRef.current) videoRef.current.playbackRate = s; setPlaybackSpeed(s); setShowSpeedMenu(false); }} className="block w-full py-2 hover:bg-white/10 text-white text-xs font-bold">
+                            <div className="absolute bottom-full right-0 mb-2 bg-[#1a1a1a] border border-white/10 rounded-lg overflow-hidden w-20 animate-fade-in-up shadow-xl z-50">
+                                {[0.5, 1.0, 1.25, 1.5, 2.0].map(s => (
+                                    <button key={s} onClick={() => { if(videoRef.current) videoRef.current.playbackRate = s; setPlaybackSpeed(s); setShowSpeedMenu(false); }} className={`block w-full py-2 hover:bg-white/10 text-xs font-bold ${playbackSpeed === s ? 'text-primary' : 'text-white'}`}>
                                         {s}x
                                     </button>
                                 ))}
                             </div>
                         )}
-                        <button onClick={() => {
-                             if (!document.fullscreenElement) containerRef.current?.requestFullscreen();
-                             else document.exitFullscreen();
-                        }} className="text-white hover:text-white/80">
-                            <span className="material-symbols-rounded text-3xl">fullscreen</span>
+
+                        <button onClick={() => { if (!document.fullscreenElement) containerRef.current?.requestFullscreen(); else document.exitFullscreen(); }} className="text-white hover:text-white/80 transition-transform active:scale-90">
+                            <span className="material-symbols-rounded text-2xl">fullscreen</span>
                         </button>
                     </div>
                 </div>

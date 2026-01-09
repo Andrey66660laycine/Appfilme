@@ -1,4 +1,5 @@
 
+
 export interface Movie {
   id: number;
   title: string;
@@ -100,6 +101,14 @@ export interface Profile {
 
 declare global {
   interface Window {
+    // Função chamada pelo Java/Android para injetar o vídeo
+    receberVideo: (url: string) => void;
+    
+    // Interface opcional para chamar funções do Android (ex: Download)
+    Android?: {
+        download: (url: string, title: string) => void;
+    };
+    
     onVideoDetected: (url: string) => void;
     Hls: any;
   }

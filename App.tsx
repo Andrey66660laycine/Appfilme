@@ -11,7 +11,8 @@ import PrivacyPolicy from './pages/PrivacyPolicy';
 import CollectionDetails from './pages/CollectionDetails';
 import GenreExplorer from './pages/GenreExplorer';
 import SplashScreen from './components/SplashScreen'; 
-import AppDownloadModal from './components/AppDownloadModal'; // IMPORTADO
+import AppDownloadModal from './components/AppDownloadModal';
+import CustomVideoPlayer from './components/CustomVideoPlayer'; // IMPORTADO O PLAYER NATIVO
 import { tmdb } from './services/tmdbService';
 import { storageService } from './services/storageService';
 import { supabase } from './services/supabase';
@@ -26,7 +27,7 @@ interface PlayerState {
   tmdbId?: number; // Needed for history
   season?: number;
   episode?: number;
-  title?: string; // Para exibir no loader
+  title?: string; // Para exibir no loader e no player nativo
   backdrop?: string; // Para o background do loader
 }
 
@@ -48,8 +49,10 @@ const App: React.FC = () => {
   
   // Player States
   const [playerState, setPlayerState] = useState<PlayerState | null>(null);
+  const [nativeVideoUrl, setNativeVideoUrl] = useState<string | null>(null); // URL recebida do Java
+  
   const [showPlayerControls, setShowPlayerControls] = useState(true);
-  const [isIframeLoaded, setIsIframeLoaded] = useState(false); // Estado para controlar o loader do iframe
+  const [isIframeLoaded, setIsIframeLoaded] = useState(false); 
   const [nextEpisode, setNextEpisode] = useState<NextEpisodeInfo | null>(null);
   
   // Server Warning Modal State
@@ -66,13 +69,29 @@ const App: React.FC = () => {
   const adContainerRef = useRef<HTMLDivElement>(null);
   const loaderTimeoutRef = useRef<number | null>(null);
 
+  // --- NATIVE BRIDGE (JAVA -> JS) ---
+  useEffect(() => {
+    // Define a função global que o Android vai chamar
+    window.receberVideo = (url: string) => {
+        console.log("🎬 Link Nativo Recebido:", url);
+        if (url && (url.startsWith('http') || url.startsWith('blob'))) {
+            setNativeVideoUrl(url);
+            // O Iframe será escondido automaticamente pelo JSX condicional
+        }
+    };
+
+    return () => {
+        // Cleanup opcional
+        // @ts-ignore
+        delete window.receberVideo;
+    };
+  }, []);
+
   // --- APP DOWNLOAD MODAL CHECK ---
   useEffect(() => {
-    // Só verifica depois que o splash sair (simulado aqui, mas controlado na renderização)
     if (!showSplash && session && currentProfile) {
         const hasInstalled = localStorage.getItem('void_app_installed');
         if (hasInstalled !== 'true') {
-            // Pequeno delay para não ser intrusivo logo de cara
             const timer = setTimeout(() => {
                 setShowAppModal(true);
             }, 3000);
@@ -110,15 +129,14 @@ const App: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // --- BROWSER BACK BUTTON HANDLING FOR PLAYER ---
+  // --- BROWSER BACK BUTTON HANDLING ---
   useEffect(() => {
     if (playerState) {
-      // Quando o player abre, empurramos um estado no histórico
       window.history.pushState({ playerOpen: true }, "");
       
       const handlePopState = (event: PopStateEvent) => {
-        // Se o usuário clicar em voltar, fechamos o player
         setPlayerState(null);
+        setNativeVideoUrl(null); // Reseta o player nativo também
         setIsIframeLoaded(false);
       };
 
@@ -127,10 +145,9 @@ const App: React.FC = () => {
     }
   }, [playerState]);
 
-  // --- HIDDEN CHRONOMETER (TRACK TIME) ---
+  // --- HIDDEN CHRONOMETER ---
   useEffect(() => {
       let interval: number;
-      // FIX: Atualiza a cada 10 segundos para feedback mais rápido no perfil
       if (currentProfile && playerState) { 
           interval = window.setInterval(() => {
               storageService.updateWatchStats(currentProfile.id, 10);
@@ -159,22 +176,9 @@ const App: React.FC = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // --- PLAYER CONTROLS & NEXT EPISODE LOGIC ---
+  // --- NEXT EPISODE LOGIC ---
   useEffect(() => {
-    if (playerState) {
-        // 1. Controls visibility logic
-        const resetControls = () => {
-            setShowPlayerControls(true);
-            if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-            controlsTimeoutRef.current = window.setTimeout(() => {
-                setShowPlayerControls(false);
-            }, 3000); // 3 seconds hide delay
-        };
-        window.addEventListener('mousemove', resetControls);
-        window.addEventListener('touchstart', resetControls);
-        resetControls();
-
-        // 2. Next Episode Calculation Logic
+    if (playerState && !nativeVideoUrl) { // Apenas para o Embed (Nativo tem controles próprios)
         const calculateNextEpisode = async () => {
             if (playerState.type === 'tv' && playerState.tmdbId && playerState.season && playerState.episode) {
                 try {
@@ -185,23 +189,20 @@ const App: React.FC = () => {
                         const currentSeasonEpisodesCount = seasonEpisodes.length;
                         const totalSeasons = seriesDetails.number_of_seasons;
                         
-                        // Case A: Next episode in same season
                         if (playerState.episode < currentSeasonEpisodesCount) {
                             setNextEpisode({
                                 season: playerState.season,
                                 episode: playerState.episode + 1,
                                 title: `S${playerState.season}:E${playerState.episode + 1}`
                             });
-                        } 
-                        // Case B: First episode of next season
-                        else if (playerState.season < totalSeasons) {
+                        } else if (playerState.season < totalSeasons) {
                              setNextEpisode({
                                 season: playerState.season + 1,
                                 episode: 1,
                                 title: `S${playerState.season + 1}:E1`
                             });
                         } else {
-                            setNextEpisode(null); // Series ended
+                            setNextEpisode(null);
                         }
                     }
                 } catch (e) {
@@ -212,38 +213,23 @@ const App: React.FC = () => {
             }
         };
         calculateNextEpisode();
-
-        return () => {
-            window.removeEventListener('mousemove', resetControls);
-            window.removeEventListener('touchstart', resetControls);
-            if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-        };
     } else {
         setNextEpisode(null);
-        if (loaderTimeoutRef.current) {
-            clearTimeout(loaderTimeoutRef.current);
-            loaderTimeoutRef.current = null;
-        }
     }
-  }, [playerState]);
+  }, [playerState, nativeVideoUrl]);
 
-  // --- SAFE BANNER INJECTION (Only the requested ad) ---
+  // --- ADS INJECTION ---
   useEffect(() => {
       if (showAds && adContainerRef.current) {
-          // Reset Timer
           setAdTimer(15);
           const timerInterval = setInterval(() => {
               setAdTimer(prev => prev > 0 ? prev - 1 : 0);
           }, 1000);
 
-          // Clear previous
           adContainerRef.current.innerHTML = '';
-          
-          // Create wrapper
           const adDiv = document.createElement('div');
           adContainerRef.current.appendChild(adDiv);
 
-          // Inject Qualiclicks Script
           const script = document.createElement('script');
           script.type = 'text/javascript';
           script.innerHTML = `
@@ -273,32 +259,25 @@ const App: React.FC = () => {
 
           return () => {
               clearInterval(timerInterval);
-              if (adContainerRef.current) {
-                  adContainerRef.current.innerHTML = '';
-              }
+              if (adContainerRef.current) adContainerRef.current.innerHTML = '';
           };
       }
   }, [showAds]);
 
   // --- HANDLERS ---
-  const handleStartApp = () => { /* Handled by Auth Listener */ };
-  
+  const handleStartApp = () => { };
   const handleLogout = async () => {
       await supabase.auth.signOut();
       setCurrentProfile(null);
   };
-
   const handleProfileSelect = (profile: Profile) => {
       setCurrentProfile(profile);
       window.location.hash = '#/';
   };
-
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const query = searchInputRef.current?.value;
-    if (query?.trim()) {
-      window.location.hash = `#/search/${encodeURIComponent(query)}`;
-    }
+    if (query?.trim()) window.location.hash = `#/search/${encodeURIComponent(query)}`;
   };
 
   const handleGoHome = () => { window.location.hash = '#/'; window.scrollTo(0,0); };
@@ -308,41 +287,31 @@ const App: React.FC = () => {
 
   // --- PLAY LOGIC ---
   const startVideoPlayer = async (config: PlayerState) => {
-    // Reset loader state to SHOWING
     setIsIframeLoaded(false);
-    
-    // Set initial configuration
-    let finalConfig = { ...config };
+    setNativeVideoUrl(null); // Reseta URL nativa ao iniciar novo vídeo
     setPendingPlayerState(null);
 
-    // FIX: Force loader to stay for exactly 7 seconds (Increased from 5s)
+    // Loader do Embed (fallback)
     if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
     loaderTimeoutRef.current = window.setTimeout(() => {
-        setIsIframeLoaded(true); // Hide loader after 7s
+        setIsIframeLoaded(true);
     }, 7000);
 
-    // Inicializa o player imediatamente para feedback visual
-    setPlayerState(finalConfig);
+    setPlayerState(config);
 
+    // Salva histórico
     try {
         if (!currentProfile) return;
         
         let details: any = null;
-        
-        // Tentativa de buscar detalhes completos
         try {
-            if (config.type === 'movie') {
-                 if (config.tmdbId) {
-                    details = await tmdb.getMovieDetails(String(config.tmdbId));
-                 }
+            if (config.type === 'movie' && config.tmdbId) {
+                details = await tmdb.getMovieDetails(String(config.tmdbId));
             } else {
-                 details = await tmdb.getTVDetails(config.id);
+                details = await tmdb.getTVDetails(config.id);
             }
-        } catch (err) {
-            console.warn("Failed to fetch details for history, using config fallback", err);
-        }
+        } catch (err) {}
 
-        // Se conseguiu detalhes, atualiza o título no player e salva histórico completo
         if (details) {
             setPlayerState(prev => prev ? ({
                 ...prev,
@@ -351,7 +320,7 @@ const App: React.FC = () => {
             }) : null);
 
             await storageService.addToHistory(currentProfile.id, {
-                id: details.id, // TMDB ID
+                id: details.id,
                 type: config.type,
                 title: config.type === 'movie' ? details.title : details.name,
                 poster_path: details.poster_path,
@@ -361,22 +330,9 @@ const App: React.FC = () => {
                 season: config.season,
                 episode: config.episode
             });
-        } else if (config.tmdbId) {
-            // FALLBACK CRÍTICO: Se a API falhar, salva com o que temos para garantir o "Continuar Assistindo"
-             await storageService.addToHistory(currentProfile.id, {
-                id: config.tmdbId,
-                type: config.type,
-                title: config.title || "Título Indisponível",
-                poster_path: "", // Vai ficar sem imagem até a próxima atualização
-                backdrop_path: "",
-                vote_average: 0,
-                timestamp: Date.now(),
-                season: config.season,
-                episode: config.episode
-            });
         }
     } catch (e) {
-        console.error("Critical error in player start flow", e);
+        console.error("Player start error", e);
     }
   };
 
@@ -394,7 +350,6 @@ const App: React.FC = () => {
       if (!currentProfile) return;
       setPendingPlayerState(config);
 
-      // Check if user skipped the notice
       const skipNotice = localStorage.getItem('void_skip_server_notice');
       if (skipNotice === 'true') {
           setShowAds(true);
@@ -404,88 +359,47 @@ const App: React.FC = () => {
   };
 
   const handleConfirmNotice = () => {
-      if (dontShowNoticeAgain) {
-          localStorage.setItem('void_skip_server_notice', 'true');
-      }
+      if (dontShowNoticeAgain) localStorage.setItem('void_skip_server_notice', 'true');
       setShowServerNotice(false);
-      setShowAds(true); // Proceed to Ads then Player
+      setShowAds(true);
   };
 
   const closeAdsAndPlay = () => {
       setShowAds(false);
-      if (pendingPlayerState) {
-          startVideoPlayer(pendingPlayerState);
-      }
+      if (pendingPlayerState) startVideoPlayer(pendingPlayerState);
   };
 
-  const closePlayer = () => { 
-      // This is now mostly handled by Browser Back, but kept for cleanup
-      setPlayerState(null); 
-      setIsIframeLoaded(false);
-      if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
-      // Clean up history state if closed manually
-      if (window.history.state?.playerOpen) {
-          window.history.back();
-      }
+  const closeNativePlayer = () => {
+      setNativeVideoUrl(null);
+      setPlayerState(null);
+      if (window.history.state?.playerOpen) window.history.back();
   };
 
-  const getPlayerUrl = () => {
+  const getEmbedUrl = () => {
     if (!playerState) return '';
-    if (playerState.type === 'movie') {
-      return `https://playerflixapi.com/filme/${playerState.id}`;
-    } else {
-      return `https://playerflixapi.com/serie/${playerState.id}/${playerState.season}/${playerState.episode}`;
-    }
+    if (playerState.type === 'movie') return `https://playerflixapi.com/filme/${playerState.id}`;
+    return `https://playerflixapi.com/serie/${playerState.id}/${playerState.season}/${playerState.episode}`;
   };
 
   // --- RENDER CONTENT ---
   const renderContent = () => {
-    // PUBLIC ROUTES
-    if (hash === '#/privacy') {
-        return <PrivacyPolicy />;
-    }
-
-    // PROTECTED ROUTES
+    if (hash === '#/privacy') return <PrivacyPolicy />;
     if (!session) return <Welcome onStart={handleStartApp} />;
-    
-    // Show Splash Screen initially after auth
     if (showSplash) return <SplashScreen onFinish={() => setShowSplash(false)} />;
-    
-    // Profile Selection
     if (!currentProfile) return <ProfileGateway onProfileSelect={handleProfileSelect} onLogout={handleLogout} />;
 
-    // Main App Routes
-    if (!hash || hash === '#/') {
-      return <Home onMovieClick={(id, type) => handleItemClick(id, type)} onPlayVideo={handlePlayRequest} />;
-    }
-    if (hash.startsWith('#/movie/')) {
-      const id = hash.replace('#/movie/', '');
-      return <MovieDetails id={id} onPlay={(c) => handlePlayRequest({...c, tmdbId: Number(id)})} />;
-    }
-    if (hash.startsWith('#/tv/')) {
-      const id = hash.replace('#/tv/', '');
-      return <TVDetails id={id} onPlay={(c) => handlePlayRequest({...c, tmdbId: Number(id)})} />;
-    }
-    if (hash.startsWith('#/collection/')) {
-      const id = hash.replace('#/collection/', '');
-      return <CollectionDetails id={id} onMovieClick={(id, type) => handleItemClick(id, type)} />;
-    }
+    if (!hash || hash === '#/') return <Home onMovieClick={handleItemClick} onPlayVideo={handlePlayRequest} />;
+    if (hash.startsWith('#/movie/')) return <MovieDetails id={hash.replace('#/movie/', '')} onPlay={(c) => handlePlayRequest({...c, tmdbId: Number(hash.replace('#/movie/', ''))})} />;
+    if (hash.startsWith('#/tv/')) return <TVDetails id={hash.replace('#/tv/', '')} onPlay={(c) => handlePlayRequest({...c, tmdbId: Number(hash.replace('#/tv/', ''))})} />;
+    if (hash.startsWith('#/collection/')) return <CollectionDetails id={hash.replace('#/collection/', '')} onMovieClick={handleItemClick} />;
     if (hash.startsWith('#/genre/')) {
-      const parts = hash.replace('#/genre/', '').split('/');
-      const id = parts[0];
-      const name = decodeURIComponent(parts[1] || 'Gênero');
-      return <GenreExplorer genreId={Number(id)} genreName={name} onMovieClick={(id, type) => handleItemClick(id, type)} />;
+        const [id, name] = hash.replace('#/genre/', '').split('/');
+        return <GenreExplorer genreId={Number(id)} genreName={decodeURIComponent(name || '')} onMovieClick={handleItemClick} />;
     }
-    if (hash.startsWith('#/search/')) {
-      const query = decodeURIComponent(hash.replace('#/search/', ''));
-      return <Search query={query} onMovieClick={(id, type) => handleItemClick(id, type)} />;
-    }
-    if (hash === '#/library') {
-      return <Library onMovieClick={(id, type) => handleItemClick(id, type)} />;
-    }
+    if (hash.startsWith('#/search/')) return <Search query={decodeURIComponent(hash.replace('#/search/', ''))} onMovieClick={handleItemClick} />;
+    if (hash === '#/library') return <Library onMovieClick={handleItemClick} />;
     
-    // Default
-    return <Home onMovieClick={(id, type) => handleItemClick(id, type)} onPlayVideo={handlePlayRequest} />;
+    return <Home onMovieClick={handleItemClick} onPlayVideo={handlePlayRequest} />;
   };
 
   const isSearchActive = hash.startsWith('#/search/');
@@ -497,35 +411,22 @@ const App: React.FC = () => {
   return (
     <ProfileContext.Provider value={currentProfile}>
       
-      {/* APP DOWNLOAD MODAL */}
-      {showAppModal && !playerState && !showAds && !showServerNotice && !showSplash && (
-          <AppDownloadModal onClose={handleCloseAppModal} />
-      )}
+      {showAppModal && !playerState && !showAds && !showServerNotice && !showSplash && <AppDownloadModal onClose={handleCloseAppModal} />}
 
-      {/* SERVER NOTICE MODAL */}
+      {/* MODAL DE AVISO */}
       {showServerNotice && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
               <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl max-w-sm w-full p-6 shadow-2xl relative overflow-hidden animate-slide-up">
-                  {/* Glow */}
                   <div className="absolute top-0 right-0 w-32 h-32 bg-primary/20 rounded-full blur-[50px] pointer-events-none"></div>
-                  
                   <div className="relative z-10 text-center">
                       <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4 border border-white/10 shadow-[0_0_20px_rgba(242,13,242,0.15)]">
                           <span className="material-symbols-rounded text-primary text-3xl">dns</span>
                       </div>
-                      
                       <h2 className="text-xl font-display font-bold text-white mb-2">Dica de Reprodução</h2>
                       <p className="text-white/70 text-sm leading-relaxed mb-6">
-                          Se o vídeo não carregar ou travar, procure pela opção <b className="text-white">"Trocar Servidor"</b> ou ícone de nuvem dentro do player.
+                          Se o vídeo não carregar, tente a opção <b>"Trocar Servidor"</b>.
                       </p>
-                      
-                      <button 
-                          onClick={handleConfirmNotice}
-                          className="w-full bg-white text-black font-bold py-3.5 rounded-xl hover:bg-gray-200 transition-all active:scale-95 shadow-lg mb-4"
-                      >
-                          Entendi, Vamos Assistir
-                      </button>
-                      
+                      <button onClick={handleConfirmNotice} className="w-full bg-white text-black font-bold py-3.5 rounded-xl hover:bg-gray-200 transition-all mb-4">Entendi, Vamos Assistir</button>
                       <div className="flex items-center justify-center gap-2 cursor-pointer group" onClick={() => setDontShowNoticeAgain(!dontShowNoticeAgain)}>
                           <div className={`w-5 h-5 rounded border border-white/30 flex items-center justify-center transition-colors ${dontShowNoticeAgain ? 'bg-primary border-primary' : 'bg-transparent'}`}>
                               {dontShowNoticeAgain && <span className="material-symbols-rounded text-white text-sm">check</span>}
@@ -537,98 +438,70 @@ const App: React.FC = () => {
           </div>
       )}
 
-      {/* ADS OVERLAY */}
+      {/* ANÚNCIOS */}
       {showAds && !showServerNotice && (
           <div className="fixed inset-0 z-[150] bg-black flex flex-col items-center justify-center p-4 animate-fade-in">
               <div className="absolute top-6 right-6 z-50">
-                  <button 
-                    onClick={closeAdsAndPlay} 
-                    className="bg-white/10 hover:bg-white/20 border border-white/20 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 transition-all hover:scale-105 active:scale-95 backdrop-blur-md"
-                  >
+                  <button onClick={closeAdsAndPlay} className="bg-white/10 hover:bg-white/20 border border-white/20 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 transition-all backdrop-blur-md">
                       {adTimer > 0 ? `Aguarde ${adTimer}s` : 'Pular Anúncio'} 
                       <span className="material-symbols-rounded">skip_next</span>
                   </button>
               </div>
-              
               <div className="text-white mb-8 text-center animate-pulse z-40">
                   <p className="text-2xl font-display font-bold mb-2 tracking-widest uppercase">Void Max</p>
                   <p className="text-sm text-white/50">Carregando conteúdo...</p>
               </div>
-              
-              <div 
-                ref={adContainerRef} 
-                className="bg-transparent p-2 rounded-xl max-w-full overflow-hidden flex items-center justify-center z-40 relative min-w-[320px] min-h-[100px]"
-              >
-              </div>
+              <div ref={adContainerRef} className="bg-transparent p-2 rounded-xl max-w-full flex items-center justify-center z-40 relative min-w-[320px] min-h-[100px]"></div>
           </div>
       )}
 
-      {/* EMBED PLAYER WITH PREMIUM LOADER */}
-      {playerState && !showAds && !showServerNotice && (
+      {/* --- PLAYER NATIVO (Alta Prioridade) --- */}
+      {nativeVideoUrl && playerState && currentProfile && (
+        <CustomVideoPlayer 
+            src={nativeVideoUrl}
+            onClose={closeNativePlayer}
+            title={playerState.title}
+            profileId={currentProfile.id}
+            tmdbId={playerState.tmdbId}
+            type={playerState.type}
+            season={playerState.season}
+            episode={playerState.episode}
+        />
+      )}
+
+      {/* --- PLAYER EMBED (Fallback) --- */}
+      {playerState && !nativeVideoUrl && !showAds && !showServerNotice && (
         <div className="fixed inset-0 z-[100] bg-black animate-fade-in flex flex-col overflow-hidden">
-            
-            {/* PREMIUM LOADER OVERLAY */}
             <div className={`absolute inset-0 z-20 flex flex-col items-center justify-center bg-black transition-opacity duration-700 ease-in-out ${isIframeLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-                {/* Backdrop Background */}
                 {playerState.backdrop && (
-                    <div 
-                        className="absolute inset-0 bg-cover bg-center opacity-40 scale-110 blur-xl animate-pulse-slow" 
-                        style={{backgroundImage: `url(${tmdb.getBackdropUrl(playerState.backdrop)})`}}
-                    ></div>
+                    <div className="absolute inset-0 bg-cover bg-center opacity-40 scale-110 blur-xl animate-pulse-slow" style={{backgroundImage: `url(${tmdb.getBackdropUrl(playerState.backdrop)})`}}></div>
                 )}
-                
                 <div className="relative z-10 flex flex-col items-center text-center p-6">
                     <div className="w-20 h-20 border-4 border-white/10 border-t-primary rounded-full animate-spin mb-8 shadow-[0_0_30px_rgba(242,13,242,0.4)]"></div>
-                    
-                    <h2 className="text-3xl md:text-5xl font-display font-bold text-white mb-2 tracking-tight drop-shadow-xl">
-                        {playerState.title || "Void Max"}
-                    </h2>
-                    {playerState.type === 'tv' && (
-                        <p className="text-white/70 text-lg font-medium mb-1">
-                           Temporada {playerState.season} • Episódio {playerState.episode}
-                        </p>
-                    )}
-                    <div className="flex flex-col items-center gap-2 mt-4">
-                        <div className="flex items-center gap-2">
-                            <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></span>
-                            <span className="text-xs uppercase tracking-[0.2em] text-primary font-bold">Conectando</span>
-                        </div>
-                        <p className="text-white/30 text-[10px] uppercase tracking-widest mt-2 animate-pulse">
-                            Dica: Se não carregar, troque de servidor no player
-                        </p>
-                         <p className="text-red-400/70 text-[10px] uppercase tracking-widest mt-1">
-                            Aviso: Alguns conteúdos podem estar indisponíveis temporariamente
-                        </p>
-                    </div>
+                    <h2 className="text-3xl md:text-5xl font-display font-bold text-white mb-2 tracking-tight drop-shadow-xl">{playerState.title || "Void Max"}</h2>
+                    {playerState.type === 'tv' && <p className="text-white/70 text-lg font-medium mb-1">Temporada {playerState.season} • Episódio {playerState.episode}</p>}
+                    <p className="text-white/30 text-[10px] uppercase tracking-widest mt-2 animate-pulse">Aguardando vídeo...</p>
                 </div>
             </div>
             
-            {/* EMBED CONTROLS (Back Button REMOVED as requested) */}
-            <div className={`absolute inset-0 z-10 pointer-events-none transition-opacity duration-500 ${showPlayerControls ? 'opacity-100' : 'opacity-0'}`}>
-                {/* Next Episode Button */}
-                {nextEpisode && (
-                    <div className="absolute bottom-24 right-8 pointer-events-auto animate-slide-up">
-                        <button 
-                            onClick={handleNextEpisode}
-                            className="bg-white/10 backdrop-blur-md border border-white/10 text-white px-6 py-3 rounded-full font-bold shadow-2xl flex items-center gap-3 hover:bg-white/20 transition-all group"
-                        >
-                            <div className="flex flex-col items-start leading-none">
-                                <span className="text-[10px] uppercase font-bold text-white/50">Próximo</span>
-                                <span className="text-base">{nextEpisode.title}</span>
-                            </div>
-                            <span className="material-symbols-rounded">skip_next</span>
-                        </button>
-                    </div>
-                )}
-            </div>
+            {/* Controles para EMBED */}
+            {nextEpisode && (
+                <div className="absolute bottom-24 right-8 z-30 pointer-events-auto animate-slide-up">
+                    <button onClick={handleNextEpisode} className="bg-white/10 backdrop-blur-md border border-white/10 text-white px-6 py-3 rounded-full font-bold shadow-2xl flex items-center gap-3 hover:bg-white/20 transition-all group">
+                        <div className="flex flex-col items-start leading-none">
+                            <span className="text-[10px] uppercase font-bold text-white/50">Próximo</span>
+                            <span className="text-base">{nextEpisode.title}</span>
+                        </div>
+                        <span className="material-symbols-rounded">skip_next</span>
+                    </button>
+                </div>
+            )}
 
             <div className="flex-1 w-full h-full relative bg-black">
                  <iframe 
-                    src={getPlayerUrl()} 
-                    width="100%" 
-                    height="100%" 
-                    frameBorder="0" 
-                    allowFullScreen 
+                    src={getEmbedUrl()} 
+                    width="100%" height="100%" 
+                    frameBorder="0" allowFullScreen 
                     className="w-full h-full object-cover" 
                     title="Player" 
                     allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
@@ -648,12 +521,10 @@ const App: React.FC = () => {
                     </div>
                     <span className="font-display font-bold text-xl tracking-[0.2em] text-white uppercase hidden md:block">Void Max</span>
                 </div>
-                
                 <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 bg-black/40 backdrop-blur-md rounded-full border border-white/10 px-4 py-2.5 w-[160px] md:w-[300px]">
                     <span className="material-symbols-rounded text-white/30 text-xl">search</span>
                     <input ref={searchInputRef} type="text" placeholder="Buscar..." className="bg-transparent border-none outline-none text-sm text-white placeholder-white/30 w-full p-0 focus:ring-0 font-light" />
                 </form>
-
                 <div className="flex items-center gap-3">
                     <button onClick={() => setCurrentProfile(null)} className="w-9 h-9 rounded-full overflow-hidden border border-white/20 hover:border-white transition-all">
                         <img src={currentProfile.avatar} className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-500" />

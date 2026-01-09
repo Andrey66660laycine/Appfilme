@@ -30,7 +30,9 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
       // FILTRA ITENS TERMINADOS (>95% visto) para não poluir o "Continue Watching"
       const continueWatching = history.filter(item => {
           if (!item.duration || item.duration === 0) return true;
-          const pct = (item.progress / item.duration);
+          // Fix: Ensure progress is a number (default to 0 if undefined)
+          const progress = item.progress || 0;
+          const pct = (progress / item.duration);
           return pct < 0.95; 
       });
 

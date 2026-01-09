@@ -11,10 +11,8 @@ export const tmdb = {
     try {
       let url = `${BASE_URL}/trending/${type}/week?api_key=${API_KEY}&language=${LANG}`;
       
-      // Se for Kids, usamos discover para filtrar melhor
       if (isKid) {
-          // Gêneros: 16 (Animation), 10751 (Family). Excluir: 27 (Horror), 53 (Thriller), 80 (Crime)
-          const typePath = type === 'all' ? 'movie' : type; // Default to movie for discovery mix
+          const typePath = type === 'all' ? 'movie' : type; 
           url = `${BASE_URL}/discover/${typePath}?api_key=${API_KEY}&language=${LANG}&sort_by=popularity.desc&with_genres=16,10751&without_genres=27,53,80&include_adult=false`;
       }
 
@@ -29,8 +27,7 @@ export const tmdb = {
 
   getOriginals: async (): Promise<Movie[]> => {
       try {
-          // Simula "Originais" buscando filmes de alta avaliação e popularidade
-          const url = `${BASE_URL}/discover/tv?api_key=${API_KEY}&language=${LANG}&sort_by=vote_average.desc&vote_count.gte=1000&include_adult=false&with_networks=213`; // 213 is Netflix ID example, or just high rated
+          const url = `${BASE_URL}/discover/tv?api_key=${API_KEY}&language=${LANG}&sort_by=vote_average.desc&vote_count.gte=1000&include_adult=false&with_networks=213`; 
           const res = await fetch(url);
           const data = await res.json();
           return data.results || [];
@@ -50,12 +47,10 @@ export const tmdb = {
     }
   },
 
-  // ATUALIZADO: Suporte a paginação (page)
   discoverByGenre: async (genreId: number, type: 'movie' | 'tv' = 'movie', page: number = 1): Promise<Movie[]> => {
     try {
         const res = await fetch(`${BASE_URL}/discover/${type}?api_key=${API_KEY}&language=${LANG}&with_genres=${genreId}&sort_by=popularity.desc&include_adult=false&page=${page}`);
         const data = await res.json();
-        // Mapeia para adicionar media_type pois o discover não retorna isso explicitamente sempre
         return (data.results || []).map((item: any) => ({ ...item, media_type: type }));
     } catch (error) {
         console.error("Failed to discover by genre:", error);
@@ -65,16 +60,41 @@ export const tmdb = {
 
   getRecommendations: async (id: string, type: 'movie' | 'tv'): Promise<Movie[]> => {
       try {
-          const res = await fetch(`${BASE_URL}/${type}/${id}/recommendations?api_key=${API_KEY}&language=${LANG}`);
-          const data = await res.json();
-          return (data.results || []).map((item: any) => ({ ...item, media_type: type }));
+          // 1. Tenta pegar recomendações diretas
+          let res = await fetch(`${BASE_URL}/${type}/${id}/recommendations?api_key=${API_KEY}&language=${LANG}`);
+          let data = await res.json();
+          let results = data.results || [];
+
+          // 2. FILTRO DE QUALIDADE & POPULARIDADE
+          // Se tiver poucos resultados ou resultados ruins, tenta pegar "Similar"
+          if (results.length < 5) {
+              res = await fetch(`${BASE_URL}/${type}/${id}/similar?api_key=${API_KEY}&language=${LANG}`);
+              data = await res.json();
+              results = [...results, ...(data.results || [])];
+          }
+
+          // 3. Aplica filtros rigorosos: Pós-2010, Populares e com Imagem
+          const filtered = results.filter((item: any) => {
+              const releaseDate = item.release_date || item.first_air_date;
+              const year = releaseDate ? parseInt(releaseDate.split('-')[0]) : 0;
+              return (
+                  year >= 2010 && // Apenas filmes recentes
+                  item.vote_average >= 5.0 && // Nota mínima
+                  item.backdrop_path && // Tem que ter imagem de fundo
+                  item.vote_count > 100 // Remove filmes obscuros
+              );
+          });
+
+          // 4. Se o filtro for muito agressivo e sobrar pouco, relaxa o filtro de ano
+          const finalResults = filtered.length >= 4 ? filtered : results.filter((i: any) => i.backdrop_path);
+
+          return finalResults.map((item: any) => ({ ...item, media_type: type }));
       } catch (error) {
           console.error("Failed to fetch recommendations:", error);
           return [];
       }
   },
 
-  // Busca detalhes de uma coleção (Saga)
   getCollection: async (collectionId: number): Promise<any | null> => {
       try {
           const res = await fetch(`${BASE_URL}/collection/${collectionId}?api_key=${API_KEY}&language=${LANG}`);
@@ -152,12 +172,10 @@ export const tmdb = {
 
   getVideos: async (id: string, type: 'movie' | 'tv'): Promise<any[]> => {
       try {
-          // Busca vídeos em PT-BR
           let res = await fetch(`${BASE_URL}/${type}/${id}/videos?api_key=${API_KEY}&language=${LANG}`);
           let data = await res.json();
           let results = data.results || [];
           
-          // Se não houver trailer em PT-BR, busca em Inglês (fallback)
           if (results.length === 0) {
               res = await fetch(`${BASE_URL}/${type}/${id}/videos?api_key=${API_KEY}&language=en-US`);
               data = await res.json();

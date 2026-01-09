@@ -1,6 +1,7 @@
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { storageService } from '../services/storageService';
+import { gamificationService } from '../services/gamificationService';
 import { tmdb } from '../services/tmdbService';
 import { Movie } from '../types';
 
@@ -8,7 +9,7 @@ interface CustomVideoPlayerProps {
   src: string;
   onClose: () => void;
   onErrorFallback: () => void; 
-  onPlayerStable?: () => void; // Callback quando o player funciona
+  onPlayerStable?: () => void; 
   title?: string;
   profileId?: string;
   tmdbId?: number;
@@ -16,8 +17,6 @@ interface CustomVideoPlayerProps {
   season?: number;
   episode?: number;
   initialTime?: number;
-  
-  // New Props
   nextEpisode?: { season: number; episode: number; title?: string; onPlay: () => void };
   recommendations?: Movie[];
   onPlayRelated?: (movie: Movie) => void;
@@ -43,7 +42,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<any>(null);
   
-  // State Basics
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -51,13 +49,9 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
-  
-  // Smart Features
   const [showNextEpButton, setShowNextEpButton] = useState(false);
   const [showPostPlay, setShowPostPlay] = useState(false);
   const [hasStabilized, setHasStabilized] = useState(false);
-
-  // Advanced Features State
   const [isLocked, setIsLocked] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
@@ -70,21 +64,55 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const progressIntervalRef = useRef<number | null>(null);
   const animationTimeoutRef = useRef<number | null>(null);
 
-  // --- ERROR HANDLING & FALLBACK ---
+  // --- DYNAMIC THEME BASED ON GENRE ---
+  useEffect(() => {
+      // Tenta buscar detalhes para descobrir o gênero e mudar o tema
+      const fetchGenre = async () => {
+          if (!tmdbId) return;
+          try {
+              let details;
+              if (type === 'movie') details = await tmdb.getMovieDetails(String(tmdbId));
+              else details = await tmdb.getTVDetails(String(tmdbId));
+
+              if (details && details.genres.length > 0) {
+                  const genreId = details.genres[0].id;
+                  const root = document.documentElement;
+                  
+                  // Horror
+                  if (genreId === 27) root.style.setProperty('--primary-color', '#ff0000');
+                  // Sci-Fi
+                  else if (genreId === 878) root.style.setProperty('--primary-color', '#00f2ff');
+                  // Romance
+                  else if (genreId === 10749) root.style.setProperty('--primary-color', '#ff0080');
+                  // Default
+                  else root.style.setProperty('--primary-color', '#f20df2');
+              }
+          } catch (e) {}
+      };
+      fetchGenre();
+
+      // Reset theme on unmount
+      return () => document.documentElement.style.setProperty('--primary-color', '#f20df2');
+  }, [tmdbId, type]);
+
+  // --- ERROR HANDLING ---
   const handleVideoError = useCallback(() => {
       console.warn("⚠️ Erro no vídeo nativo. Tentando fallback para Embed.");
       if (onErrorFallback) onErrorFallback();
   }, [onErrorFallback]);
 
-  // --- STABILITY CALLBACK ---
+  // --- STABILITY & GAMIFICATION ---
   useEffect(() => {
       if (playing && !hasStabilized && currentTime > 1) {
           setHasStabilized(true);
           if (onPlayerStable) onPlayerStable();
+          
+          // Check Night Owl Achievement
+          if (profileId) gamificationService.checkAchievements(profileId, 'late_night');
       }
-  }, [playing, currentTime, hasStabilized, onPlayerStable]);
+  }, [playing, currentTime, hasStabilized, onPlayerStable, profileId]);
 
-  // --- INITIALIZATION & HLS ---
+  // --- INITIALIZATION ---
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -93,14 +121,8 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     setShowPostPlay(false);
     setShowNextEpButton(false);
     
-    // IMPORTANT: Para MP4s diretos que não enviam headers CORS (ex: cdn.cnvslink.com), 
-    // NÃO podemos usar crossOrigin="anonymous", senão o browser bloqueia (erro 403/cors).
-    // Apenas HLS (.m3u8) precisa obrigatoriamente de CORS.
-    if (src.includes('.m3u8')) {
-        video.crossOrigin = "anonymous";
-    } else {
-        video.removeAttribute('crossOrigin');
-    }
+    if (src.includes('.m3u8')) video.crossOrigin = "anonymous";
+    else video.removeAttribute('crossOrigin');
 
     const handleLoadedMetadata = () => {
         setDuration(video.duration);
@@ -108,32 +130,23 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
         if (initialTime > 0 && initialTime < video.duration) {
             video.currentTime = initialTime;
         }
-        video.play().then(() => setPlaying(true)).catch(() => {
-            console.log("Autoplay blocked, waiting for user interaction");
-            setPlaying(false);
-        });
+        video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
     };
 
     const handleWaiting = () => setIsLoading(true);
     const handleCanPlay = () => setIsLoading(false);
     
-    // Event Listeners
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
     video.addEventListener('waiting', handleWaiting);
     video.addEventListener('canplay', handleCanPlay);
     video.addEventListener('playing', () => { setIsLoading(false); setPlaying(true); });
     video.addEventListener('pause', () => setPlaying(false));
-    video.addEventListener('error', handleVideoError); // ERROR HANDLER
+    video.addEventListener('error', handleVideoError);
 
-    // HLS Logic
+    // HLS
     if (src.includes('.m3u8')) {
         if (window.Hls && window.Hls.isSupported()) {
-            const hls = new window.Hls({
-                debug: false,
-                enableWorker: true,
-                lowLatencyMode: true,
-                backBufferLength: 90
-            });
+            const hls = new window.Hls({ debug: false, enableWorker: true, lowLatencyMode: true });
             hlsRef.current = hls;
             hls.loadSource(src);
             hls.attachMedia(video);
@@ -144,26 +157,16 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
             });
             hls.on(window.Hls.Events.ERROR, (event: any, data: any) => {
                 if (data.fatal) {
-                   switch (data.type) {
-                     case window.Hls.ErrorTypes.NETWORK_ERROR:
-                       hls.startLoad();
-                       break;
-                     case window.Hls.ErrorTypes.MEDIA_ERROR:
-                       hls.recoverMediaError();
-                       break;
-                     default:
-                       handleVideoError(); // Fatal HLS Error -> Fallback
-                       break;
-                   }
+                   if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
+                   else handleVideoError();
                 }
             });
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = src;
         } else {
-            handleVideoError(); // No support -> Fallback
+            handleVideoError();
         }
     } else {
-        // Standard MP4
         video.src = src;
     }
 
@@ -176,28 +179,36 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     };
   }, [src, initialTime, handleVideoError]);
 
-  // --- SAVE PROGRESS (CRITICAL) ---
+  // --- SAVE PROGRESS & SMART RESUME LOGIC ---
   useEffect(() => {
       progressIntervalRef.current = window.setInterval(() => {
-          if (videoRef.current && !videoRef.current.paused && profileId && tmdbId && type) {
+          if (videoRef.current && profileId && tmdbId && type) {
+              const ct = videoRef.current.currentTime;
+              const dur = videoRef.current.duration;
+              
+              // SMART RESUME: Se faltar menos de 3 minutos (180s) ou 95% visto, marca como completo
+              // Isso "zera" o progresso para o sistema de resume
+              const isFinished = (dur - ct < 180) || (ct > dur * 0.95);
+              const progressToSave = isFinished ? dur : ct; // Salva o total se acabou
+
               storageService.updateProgress(
                   profileId, 
                   tmdbId, 
                   type, 
-                  videoRef.current.currentTime, 
-                  videoRef.current.duration,
+                  progressToSave, 
+                  dur,
                   season,
                   episode
               );
           }
-      }, 5000); // 5s Update Interval
+      }, 5000); 
 
       return () => {
           if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
       };
   }, [profileId, tmdbId, type, season, episode]);
 
-  // --- CONTROLS VISIBILITY ---
+  // --- CONTROLS ---
   const resetControlsTimeout = useCallback(() => {
       if (isLocked) return;
       setShowControls(true);
@@ -220,21 +231,13 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       };
   }, [resetControlsTimeout]);
 
-  // --- HANDLERS ---
   const togglePlay = (e?: React.MouseEvent) => {
       e?.stopPropagation();
       if (!videoRef.current) return;
-      
-      // Animation Trigger
       setPlayAnimation(videoRef.current.paused ? 'play' : 'pause');
       if (animationTimeoutRef.current) clearTimeout(animationTimeoutRef.current);
       animationTimeoutRef.current = window.setTimeout(() => setPlayAnimation(null), 600);
-
-      if (videoRef.current.paused) {
-          videoRef.current.play();
-      } else {
-          videoRef.current.pause();
-      }
+      videoRef.current.paused ? videoRef.current.play() : videoRef.current.pause();
       resetControlsTimeout();
   };
 
@@ -277,32 +280,22 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           const ct = videoRef.current.currentTime;
           const dur = videoRef.current.duration;
           setCurrentTime(ct);
-          
           if (videoRef.current.buffered.length > 0) {
-              const bufferedEnd = videoRef.current.buffered.end(videoRef.current.buffered.length - 1);
-              setBuffered(bufferedEnd);
+              setBuffered(videoRef.current.buffered.end(videoRef.current.buffered.length - 1));
           }
 
-          // SMART LOGIC: NEXT EPISODE & POST PLAY
           if (dur > 0) {
               const remaining = dur - ct;
-
-              // TV Show: Show Next Episode Button when < 45s remaining
               if (type === 'tv' && nextEpisode) {
                   if (remaining < 45 && !showNextEpButton) setShowNextEpButton(true);
                   if (remaining > 45 && showNextEpButton) setShowNextEpButton(false);
               }
-
-              // Movie: Show Post Play (Credits) when < 60s remaining or finished
               if (type === 'movie' && recommendations && recommendations.length > 0) {
-                   // Credits detection logic (simplified: last 5% or 90s)
                    if ((remaining < 90 || ct > dur * 0.97) && !showPostPlay) {
                        setShowPostPlay(true);
-                       setShowControls(false); // Hide controls to focus on recommendations
+                       setShowControls(false); 
                    }
-                   if (remaining > 90 && ct < dur * 0.97 && showPostPlay) {
-                       setShowPostPlay(false);
-                   }
+                   if (remaining > 90 && ct < dur * 0.97 && showPostPlay) setShowPostPlay(false);
               }
           }
       }
@@ -311,17 +304,12 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const handleDownload = () => {
       if (isDownloading) return;
       setIsDownloading(true);
-
       if (window.Android && window.Android.download) {
           try {
               window.Android.download(src, title);
               setTimeout(() => setIsDownloading(false), 2000);
-          } catch (e) {
-              fallbackDownload();
-          }
-      } else {
-          fallbackDownload();
-      }
+          } catch (e) { fallbackDownload(); }
+      } else { fallbackDownload(); }
   };
 
   const fallbackDownload = () => {
@@ -344,29 +332,18 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
   };
 
-  // --- GESTURES ---
   const handleTouchEnd = (e: React.TouchEvent) => {
       if (isLocked) return;
       const currentTimeTap = new Date().getTime();
       const tapLength = currentTimeTap - lastTap;
-      
       if (tapLength < 300 && tapLength > 0) {
           const touchX = e.changedTouches[0].clientX;
           const screenWidth = window.innerWidth;
-          
-          if (touchX < screenWidth / 3) {
-              skip(-10);
-              setDoubleTapAnimation('left');
-          } else if (touchX > (screenWidth * 2) / 3) {
-              skip(10);
-              setDoubleTapAnimation('right');
-          } else {
-              togglePlay();
-          }
+          if (touchX < screenWidth / 3) { skip(-10); setDoubleTapAnimation('left'); } 
+          else if (touchX > (screenWidth * 2) / 3) { skip(10); setDoubleTapAnimation('right'); } 
+          else { togglePlay(); }
           setTimeout(() => setDoubleTapAnimation(null), 500);
-      } else {
-          if (!showControls) setShowControls(true);
-      }
+      } else { if (!showControls) setShowControls(true); }
       setLastTap(currentTimeTap);
   };
 
@@ -379,15 +356,14 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     >
       <video
         ref={videoRef}
-        key={src} // Force re-render on source change to reset attributes
+        key={src}
         className={`w-full h-full object-contain transition-all duration-700 ease-in-out ${showPostPlay ? 'scale-75 translate-y-[-10%] opacity-40 blur-sm' : 'scale-100 opacity-100'}`}
         onTimeUpdate={handleTimeUpdate}
         playsInline
-        // @ts-ignore - Bypass TS check for referrerPolicy
+        // @ts-ignore
         referrerPolicy="no-referrer"
       />
 
-      {/* --- CENTER PLAY/PAUSE ANIMATION --- */}
       {playAnimation && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-50 animate-ping-once">
                <div className="w-20 h-20 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-md">
@@ -398,7 +374,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           </div>
       )}
 
-      {/* --- DOUBLE TAP ANIMATION --- */}
       {doubleTapAnimation && (
           <div className={`absolute top-1/2 -translate-y-1/2 ${doubleTapAnimation === 'left' ? 'left-10 md:left-32' : 'right-10 md:right-32'} z-50 flex flex-col items-center justify-center pointer-events-none`}>
                <div className="w-full h-full bg-white/10 rounded-full p-4 backdrop-blur-md animate-ping-fast">
@@ -410,7 +385,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           </div>
       )}
 
-      {/* --- NEXT EPISODE BUTTON --- */}
       {showNextEpButton && nextEpisode && !showPostPlay && (
           <div className="absolute bottom-20 right-6 z-[60] animate-slide-up">
               <button 
@@ -427,7 +401,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           </div>
       )}
 
-      {/* --- POST PLAY (CREDITS) OVERLAY --- */}
       {showPostPlay && recommendations && (
           <div className="absolute inset-x-0 bottom-0 h-[60%] z-[70] bg-gradient-to-t from-black via-black/95 to-transparent animate-slide-up flex flex-col justify-end pb-8 px-6">
               <div className="w-full max-w-5xl mx-auto">
@@ -455,6 +428,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                                </div>
                                <div className="absolute bottom-0 left-0 w-full p-2 bg-gradient-to-t from-black to-transparent">
                                    <p className="text-white text-xs font-bold truncate">{rec.title}</p>
+                                   <p className="text-primary text-[10px] font-bold">{rec.vote_average.toFixed(1)} ★</p>
                                </div>
                           </div>
                       ))}
@@ -463,14 +437,12 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           </div>
       )}
 
-      {/* --- BUFFERING LOADER --- */}
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 bg-black/20">
-          <div className="w-16 h-16 border-4 border-white/10 border-t-primary rounded-full animate-spin shadow-[0_0_30px_rgba(242,13,242,0.4)]"></div>
+          <div className="w-16 h-16 border-4 border-white/10 border-t-primary rounded-full animate-spin shadow-[0_0_30px_var(--primary-color)]"></div>
         </div>
       )}
 
-      {/* --- LOCK BUTTON (ALWAYS VISIBLE IF LOCKED) --- */}
       {isLocked && (
           <button 
             onClick={() => setIsLocked(false)} 
@@ -481,11 +453,8 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           </button>
       )}
 
-      {/* --- CONTROLS OVERLAY --- */}
       {!isLocked && !showPostPlay && (
       <div className={`absolute inset-0 bg-gradient-to-b from-black/80 via-transparent to-black/90 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'} flex flex-col justify-between p-4 md:p-8 z-40 pointer-events-none`}>
-          
-          {/* TOP BAR */}
           <div className="flex items-center justify-between pointer-events-auto">
               <div className="flex items-center gap-4">
                   <button onClick={onClose} className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center text-white transition-all">
@@ -496,7 +465,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                       {(season && episode) && <p className="text-white/60 text-xs mt-1">S{season}:E{episode}</p>}
                   </div>
               </div>
-              
               <div className="flex items-center gap-4">
                   <button onClick={handleDownload} className={`w-10 h-10 rounded-full flex items-center justify-center text-white transition-all ${isDownloading ? 'bg-primary text-white animate-pulse' : 'hover:bg-white/10'}`} title="Baixar">
                       <span className="material-symbols-rounded text-2xl">{isDownloading ? 'downloading' : 'download'}</span>
@@ -507,7 +475,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
               </div>
           </div>
 
-          {/* CENTER PLAY BUTTON (DESKTOP) */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto hidden md:block">
              {!isLoading && (
                  <button onClick={togglePlay} className="w-20 h-20 rounded-full bg-black/40 hover:bg-primary/80 text-white flex items-center justify-center backdrop-blur-sm border border-white/10 transition-all hover:scale-110 shadow-2xl group">
@@ -516,21 +483,17 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
              )}
           </div>
 
-          {/* BOTTOM CONTROLS */}
           <div className="pointer-events-auto pb-safe">
-              
-              {/* PROGRESS BAR */}
               <div className="flex items-center gap-4 group/seekbar relative mb-2">
                   <div className="relative flex-1 h-1.5 bg-white/20 rounded-full cursor-pointer group-hover/seekbar:h-2 transition-all">
                       <div className="absolute top-0 left-0 h-full bg-white/30 rounded-full transition-all" style={{ width: `${(buffered / duration) * 100}%` }}></div>
-                      <div className="absolute top-0 left-0 h-full bg-primary rounded-full transition-all relative shadow-[0_0_10px_#f20df2]" style={{ width: `${(currentTime / duration) * 100}%` }}>
+                      <div className="absolute top-0 left-0 h-full bg-primary rounded-full transition-all relative shadow-[0_0_10px_var(--primary-color)]" style={{ width: `${(currentTime / duration) * 100}%` }}>
                           <div className="absolute right-[-6px] top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg scale-0 group-hover/seekbar:scale-100 transition-transform"></div>
                       </div>
                       <input type="range" min="0" max={duration || 100} value={currentTime} onChange={handleSeek} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                   </div>
               </div>
 
-              {/* ACTION BUTTONS */}
               <div className="flex items-center justify-between px-1">
                    <div className="flex items-center gap-4">
                        <button onClick={togglePlay} className="md:hidden text-white hover:text-primary transition-colors">
@@ -540,7 +503,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                    </div>
 
                    <div className="flex items-center gap-2 sm:gap-4 relative">
-                       {/* SPEED CONTROL */}
                        <div className="relative">
                            <button onClick={() => setShowSpeedMenu(!showSpeedMenu)} className="px-2 py-1 rounded hover:bg-white/10 text-white/90 text-xs font-bold border border-white/20 flex items-center gap-1">
                                {playbackSpeed}x
@@ -548,25 +510,15 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                            {showSpeedMenu && (
                                <div className="absolute bottom-full right-0 mb-2 bg-[#1a1a1a] border border-white/10 rounded-lg overflow-hidden shadow-xl min-w-[80px] animate-fade-in-up">
                                    {[0.5, 1, 1.25, 1.5, 2].map(s => (
-                                       <button 
-                                        key={s} 
-                                        onClick={() => changeSpeed(s)} 
-                                        className={`block w-full text-left px-4 py-2 text-xs font-bold hover:bg-white/10 ${playbackSpeed === s ? 'text-primary' : 'text-white'}`}
-                                       >
+                                       <button key={s} onClick={() => changeSpeed(s)} className={`block w-full text-left px-4 py-2 text-xs font-bold hover:bg-white/10 ${playbackSpeed === s ? 'text-primary' : 'text-white'}`}>
                                            {s}x
                                        </button>
                                    ))}
                                </div>
                            )}
                        </div>
-
-                       <button onClick={(e) => { e.stopPropagation(); skip(10); }} className="text-white/70 hover:text-white transition-colors active:scale-90">
-                            <span className="material-symbols-rounded text-2xl">forward_10</span>
-                       </button>
-                       
-                       <button onClick={toggleFullscreen} className="text-white hover:text-primary transition-colors">
-                           <span className="material-symbols-rounded text-3xl shadow-lg">{isFullscreen ? 'fullscreen_exit' : 'fullscreen'}</span>
-                       </button>
+                       <button onClick={(e) => { e.stopPropagation(); skip(10); }} className="text-white/70 hover:text-white transition-colors active:scale-90"><span className="material-symbols-rounded text-2xl">forward_10</span></button>
+                       <button onClick={toggleFullscreen} className="text-white hover:text-primary transition-colors"><span className="material-symbols-rounded text-3xl shadow-lg">{isFullscreen ? 'fullscreen_exit' : 'fullscreen'}</span></button>
                    </div>
               </div>
           </div>
@@ -575,15 +527,9 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
 
       <style>{`
           .animate-ping-once { animation: pingOnce 0.6s cubic-bezier(0, 0, 0.2, 1) forwards; }
-          @keyframes pingOnce {
-              0% { transform: scale(0.8); opacity: 0; }
-              50% { transform: scale(1.1); opacity: 1; }
-              100% { transform: scale(1); opacity: 0; }
-          }
+          @keyframes pingOnce { 0% { transform: scale(0.8); opacity: 0; } 50% { transform: scale(1.1); opacity: 1; } 100% { transform: scale(1); opacity: 0; } }
           .animate-ping-fast { animation: pingFast 0.5s cubic-bezier(0, 0, 0.2, 1) infinite; }
-          @keyframes pingFast {
-              75%, 100% { transform: scale(1.5); opacity: 0; }
-          }
+          @keyframes pingFast { 75%, 100% { transform: scale(1.5); opacity: 0; } }
       `}</style>
     </div>
   );

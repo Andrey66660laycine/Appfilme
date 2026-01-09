@@ -12,19 +12,19 @@ import CollectionDetails from './pages/CollectionDetails';
 import GenreExplorer from './pages/GenreExplorer';
 import SplashScreen from './components/SplashScreen'; 
 import AppDownloadModal from './components/AppDownloadModal';
-import CustomVideoPlayer from './components/CustomVideoPlayer'; // IMPORTADO O PLAYER NATIVO
+import CustomVideoPlayer from './components/CustomVideoPlayer'; 
 import { tmdb } from './services/tmdbService';
 import { storageService } from './services/storageService';
+import { gamificationService } from './services/gamificationService';
 import { supabase } from './services/supabase';
 import { Profile, Movie } from './types';
 
-// Context for Current Profile
 export const ProfileContext = createContext<Profile | null>(null);
 
 interface PlayerState {
   type: 'movie' | 'tv';
-  id: string; // IMDb ID for movies, TMDb ID for TV
-  tmdbId?: number; // Needed for history
+  id: string; 
+  tmdbId?: number; 
   season?: number;
   episode?: number;
   title?: string; 
@@ -44,42 +44,63 @@ const App: React.FC = () => {
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
   const [showSplash, setShowSplash] = useState(true);
   
-  // App Download Modal State
   const [showAppModal, setShowAppModal] = useState(false);
-  
-  // Player States
   const [playerState, setPlayerState] = useState<PlayerState | null>(null);
   const [nativeVideoUrl, setNativeVideoUrl] = useState<string | null>(null); 
-  const [playerRecommendations, setPlayerRecommendations] = useState<Movie[]>([]); // Recomendações para o player
-  const [isPlayerStable, setIsPlayerStable] = useState(false); // TRAVA DE SEGURANÇA CONTRA LOOP
-
-  // ANTI-LOOP: Lista de URLs que já falharam
+  const [playerRecommendations, setPlayerRecommendations] = useState<Movie[]>([]); 
+  const [isPlayerStable, setIsPlayerStable] = useState(false); 
   const [failedUrls, setFailedUrls] = useState<Set<string>>(new Set());
-  
   const [isIframeLoaded, setIsIframeLoaded] = useState(false); 
   const [nextEpisode, setNextEpisode] = useState<NextEpisodeInfo | null>(null);
-  
-  // Server Warning Modal
   const [showServerNotice, setShowServerNotice] = useState(false);
   const [dontShowNoticeAgain, setDontShowNoticeAgain] = useState(false);
-
-  // Ads States
   const [pendingPlayerState, setPendingPlayerState] = useState<PlayerState | null>(null);
   const [showAds, setShowAds] = useState(false);
   const [adTimer, setAdTimer] = useState(15);
+  
+  // New States for Smart Features
+  const [achievementToast, setAchievementToast] = useState<{ visible: boolean; id: string }>({ visible: false, id: '' });
+  const [welcomeBackToast, setWelcomeBackToast] = useState<{ visible: boolean; item: any }>({ visible: false, item: null });
   
   const searchInputRef = useRef<HTMLInputElement>(null);
   const adContainerRef = useRef<HTMLDivElement>(null);
   const loaderTimeoutRef = useRef<number | null>(null);
 
-  // --- SNIFFER DE REDE (Client-Side Network Interceptor) ---
-  // Tenta capturar links que o iframe pede se o Java falhar
+  // --- SMART REMINDER (Welcome Back) ---
+  useEffect(() => {
+      const checkLastWatch = async () => {
+          if (!currentProfile) return;
+          const history = await storageService.getHistory(currentProfile.id);
+          if (history.length > 0) {
+              const last = history[0];
+              // Se tiver progresso e não acabou (entre 5% e 90%)
+              const pct = last.duration > 0 ? (last.progress / last.duration) : 0;
+              if (pct > 0.05 && pct < 0.90) {
+                  setWelcomeBackToast({ visible: true, item: last });
+                  setTimeout(() => setWelcomeBackToast(prev => ({ ...prev, visible: false })), 8000);
+              }
+          }
+      };
+      if (currentProfile && !playerState) checkLastWatch();
+  }, [currentProfile]);
+
+  // --- GAMIFICATION LISTENER ---
+  useEffect(() => {
+      const handleUnlock = (e: any) => {
+          const id = e.detail.id;
+          setAchievementToast({ visible: true, id });
+          setTimeout(() => setAchievementToast({ visible: false, id: '' }), 5000);
+      };
+      window.addEventListener('achievement_unlocked', handleUnlock);
+      return () => window.removeEventListener('achievement_unlocked', handleUnlock);
+  }, []);
+
+  // --- SNIFFER ---
   useEffect(() => {
     if (playerState && !nativeVideoUrl) {
         const originalFetch = window.fetch;
         const originalXHR = window.XMLHttpRequest.prototype.open;
 
-        // Hook Fetch
         window.fetch = async (...args) => {
             const [resource] = args;
             const url = typeof resource === 'string' ? resource : (resource as Request).url;
@@ -87,17 +108,14 @@ const App: React.FC = () => {
             return originalFetch(...args);
         };
 
-        // Hook XHR
         window.XMLHttpRequest.prototype.open = function(method, url) {
             if (typeof url === 'string') checkUrlForVideo(url);
             return originalXHR.apply(this, arguments as any);
         };
 
         const checkUrlForVideo = (url: string) => {
-             // Basic extension check
              if (url.match(/\.(mp4|m3u8|mkv)($|\?)/i)) {
                  if (!failedUrls.has(url) && !isPlayerStable) {
-                     console.log("🕵️ Sniffer detectou vídeo:", url);
                      window.receberVideo(url);
                  }
              }
@@ -110,31 +128,16 @@ const App: React.FC = () => {
     }
   }, [playerState, nativeVideoUrl, failedUrls, isPlayerStable]);
 
-
-  // --- NATIVE BRIDGE (JAVA -> JS) ---
+  // --- NATIVE BRIDGE ---
   useEffect(() => {
     window.receberVideo = (url: string) => {
-        // 1. Se o player já está rodando liso, ignora links novos (evita loop/reload)
-        if (isPlayerStable) {
-            console.log("🛡️ Player estável. Ignorando novo link:", url);
-            return;
-        }
-
-        // 2. Se a URL já falhou antes, ignora
-        if (failedUrls.has(url)) {
-            console.log("🚫 URL ignorada (falhou anteriormente):", url);
-            return;
-        }
-
-        // 3. Se é a mesma URL, ignora
+        if (isPlayerStable) return;
+        if (failedUrls.has(url)) return;
         if (nativeVideoUrl === url) return;
-
-        console.log("🎬 Link Nativo Recebido/Aceito:", url);
         if (url && (url.startsWith('http') || url.startsWith('blob'))) {
             setNativeVideoUrl(url);
         }
     };
-
     return () => {
         // @ts-ignore
         delete window.receberVideo;
@@ -187,12 +190,10 @@ const App: React.FC = () => {
   useEffect(() => {
     if (playerState) {
       window.history.pushState({ playerOpen: true }, "");
-      
       const handlePopState = (event: PopStateEvent) => {
         closeNativePlayer();
         setIsIframeLoaded(false);
       };
-
       window.addEventListener('popstate', handlePopState);
       return () => window.removeEventListener('popstate', handlePopState);
     }
@@ -233,16 +234,13 @@ const App: React.FC = () => {
   useEffect(() => {
     if (playerState) {
         const fetchPlayerExtras = async () => {
-            // Next Episode Logic
             if (playerState.type === 'tv' && playerState.tmdbId && playerState.season && playerState.episode) {
                 try {
                     const seriesDetails = await tmdb.getTVDetails(String(playerState.tmdbId));
                     const seasonEpisodes = await tmdb.getTVSeason(String(playerState.tmdbId), playerState.season);
-                    
                     if (seriesDetails && seasonEpisodes) {
                         const currentSeasonEpisodesCount = seasonEpisodes.length;
                         const totalSeasons = seriesDetails.number_of_seasons;
-                        
                         if (playerState.episode < currentSeasonEpisodesCount) {
                             setNextEpisode({
                                 season: playerState.season,
@@ -266,11 +264,11 @@ const App: React.FC = () => {
                 setNextEpisode(null);
             }
 
-            // Recommendations Logic (For Movie Post-Play)
             if (playerState.tmdbId) {
                 try {
+                    // USA O NOVO FILTRO DE RECOMENDAÇÕES DO SERVICE
                     const recs = await tmdb.getRecommendations(String(playerState.tmdbId), playerState.type);
-                    setPlayerRecommendations(recs.slice(0, 5)); // Top 5
+                    setPlayerRecommendations(recs.slice(0, 5)); 
                 } catch (e) {
                     console.error("Erro recs player", e);
                 }
@@ -329,7 +327,6 @@ const App: React.FC = () => {
       }
   }, [showAds]);
 
-  // --- HANDLERS ---
   const handleStartApp = () => { };
   const handleLogout = async () => {
       await supabase.auth.signOut();
@@ -350,15 +347,13 @@ const App: React.FC = () => {
   const handleGoLibrary = () => { window.location.hash = '#/library'; window.scrollTo(0,0); }
   const handleItemClick = (id: number, type: 'movie' | 'tv' = 'movie') => { window.location.hash = `#/${type}/${id}`; };
 
-  // --- PLAY LOGIC ---
   const startVideoPlayer = async (config: PlayerState) => {
     setIsIframeLoaded(false);
     setNativeVideoUrl(null); 
     setFailedUrls(new Set()); 
-    setIsPlayerStable(false); // Reseta estabilidade
+    setIsPlayerStable(false);
     setPendingPlayerState(null);
 
-    // Loader do Embed (fallback)
     if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
     loaderTimeoutRef.current = window.setTimeout(() => {
         setIsIframeLoaded(true);
@@ -366,10 +361,8 @@ const App: React.FC = () => {
 
     setPlayerState(config);
 
-    // Salva histórico
     try {
         if (!currentProfile) return;
-        
         let details: any = null;
         try {
             if (config.type === 'movie' && config.tmdbId) {
@@ -405,7 +398,6 @@ const App: React.FC = () => {
 
   const handleNextEpisode = () => {
       if (playerState && nextEpisode) {
-          // Reseta estabilidade para aceitar novo link
           setIsPlayerStable(false);
           startVideoPlayer({
               ...playerState,
@@ -423,13 +415,9 @@ const App: React.FC = () => {
   const handlePlayRequest = (config: PlayerState) => {
       if (!currentProfile) return;
       setPendingPlayerState(config);
-
       const skipNotice = localStorage.getItem('void_skip_server_notice');
-      if (skipNotice === 'true') {
-          setShowAds(true);
-      } else {
-          setShowServerNotice(true);
-      }
+      if (skipNotice === 'true') setShowAds(true);
+      else setShowServerNotice(true);
   };
 
   const handleConfirmNotice = () => {
@@ -450,28 +438,20 @@ const App: React.FC = () => {
       if (window.history.state?.playerOpen) window.history.back();
   };
 
-  // --- FALLBACK LOGIC ---
   const handleNativePlayerError = () => {
       console.log("⚠️ Player nativo falhou. Alternando para Embed (Fallback).");
-      setIsPlayerStable(false); // Player falhou, não é estável
-      
-      // Adiciona a URL atual à lista negra
-      if (nativeVideoUrl) {
-          setFailedUrls(prev => new Set(prev).add(nativeVideoUrl));
-      }
-
+      setIsPlayerStable(false);
+      if (nativeVideoUrl) setFailedUrls(prev => new Set(prev).add(nativeVideoUrl));
       setNativeVideoUrl(null);
       setIsIframeLoaded(false); 
-      
       if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
       loaderTimeoutRef.current = window.setTimeout(() => {
           setIsIframeLoaded(true);
       }, 7000);
   };
   
-  // Callback chamado pelo CustomVideoPlayer quando começa a reproduzir com sucesso
   const handlePlayerStable = () => {
-      console.log("✅ Player Nativo Estabilizado. Bloqueando injeções externas.");
+      console.log("✅ Player Nativo Estabilizado.");
       setIsPlayerStable(true);
   };
 
@@ -481,7 +461,6 @@ const App: React.FC = () => {
     return `https://playerflixapi.com/serie/${playerState.id}/${playerState.season}/${playerState.episode}`;
   };
 
-  // --- RENDER CONTENT ---
   const renderContent = () => {
     if (hash === '#/privacy') return <PrivacyPolicy />;
     if (!session) return <Welcome onStart={handleStartApp} />;
@@ -513,13 +492,53 @@ const App: React.FC = () => {
       
       {showAppModal && !playerState && !showAds && !showServerNotice && !showSplash && <AppDownloadModal onClose={handleCloseAppModal} />}
 
+      {/* WELCOME BACK TOAST */}
+      {welcomeBackToast.visible && welcomeBackToast.item && (
+          <div className="fixed top-24 right-4 z-[999] bg-[#1a1a1a] border border-primary/50 rounded-xl p-4 shadow-2xl animate-slide-up flex gap-4 max-w-sm cursor-pointer hover:bg-[#252525] transition-colors"
+               onClick={() => {
+                   // Play logic
+                   const item = welcomeBackToast.item;
+                   const conf = {
+                       type: item.type,
+                       id: String(item.id), // Pode precisar de mapping se for filme e não tiver imdb_id salvo
+                       tmdbId: item.id,
+                       season: item.season,
+                       episode: item.episode,
+                       initialTime: item.progress // Resume
+                   };
+                   handlePlayRequest(conf as any);
+                   setWelcomeBackToast({visible: false, item: null});
+               }}
+          >
+              <img src={tmdb.getPosterUrl(welcomeBackToast.item.poster_path)} className="w-12 h-16 object-cover rounded-md" />
+              <div className="flex flex-col justify-center">
+                  <p className="text-primary text-[10px] font-bold uppercase tracking-widest mb-1">Continuar de onde parou?</p>
+                  <p className="text-white font-bold text-sm line-clamp-1">{welcomeBackToast.item.title}</p>
+                  <p className="text-white/50 text-xs">Falta {Math.floor((welcomeBackToast.item.duration - welcomeBackToast.item.progress)/60)} min</p>
+              </div>
+          </div>
+      )}
+
+      {/* ACHIEVEMENT UNLOCKED TOAST */}
+      {achievementToast.visible && (
+          <div className="fixed top-10 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-4 bg-[#111] border-2 border-green-500 rounded-full pl-2 pr-6 py-2 shadow-[0_0_30px_rgba(0,255,0,0.4)] animate-achievement-pop">
+              <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center text-black">
+                  <span className="material-symbols-rounded text-2xl">emoji_events</span>
+              </div>
+              <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-green-500 uppercase tracking-widest">Conquista Desbloqueada</span>
+                  <span className="text-white font-bold text-sm">Novo Troféu Adicionado</span>
+              </div>
+          </div>
+      )}
+
       {/* MODAL DE AVISO */}
       {showServerNotice && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
               <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl max-w-sm w-full p-6 shadow-2xl relative overflow-hidden animate-slide-up">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-primary/20 rounded-full blur-[50px] pointer-events-none"></div>
                   <div className="relative z-10 text-center">
-                      <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4 border border-white/10 shadow-[0_0_20px_rgba(242,13,242,0.15)]">
+                      <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4 border border-white/10 shadow-[0_0_20px_var(--primary-color)]">
                           <span className="material-symbols-rounded text-primary text-3xl">dns</span>
                       </div>
                       <h2 className="text-xl font-display font-bold text-white mb-2">Dica de Reprodução</h2>
@@ -560,8 +579,8 @@ const App: React.FC = () => {
         <CustomVideoPlayer 
             src={nativeVideoUrl}
             onClose={closeNativePlayer}
-            onErrorFallback={handleNativePlayerError} // Passando a função de fallback
-            onPlayerStable={handlePlayerStable} // Avisa que o player está rodando
+            onErrorFallback={handleNativePlayerError} 
+            onPlayerStable={handlePlayerStable}
             title={playerState.title}
             profileId={currentProfile.id}
             tmdbId={playerState.tmdbId}
@@ -582,7 +601,7 @@ const App: React.FC = () => {
                     <div className="absolute inset-0 bg-cover bg-center opacity-40 scale-110 blur-xl animate-pulse-slow" style={{backgroundImage: `url(${tmdb.getBackdropUrl(playerState.backdrop)})`}}></div>
                 )}
                 <div className="relative z-10 flex flex-col items-center text-center p-6">
-                    <div className="w-20 h-20 border-4 border-white/10 border-t-primary rounded-full animate-spin mb-8 shadow-[0_0_30px_rgba(242,13,242,0.4)]"></div>
+                    <div className="w-20 h-20 border-4 border-white/10 border-t-primary rounded-full animate-spin mb-8 shadow-[0_0_30px_var(--primary-color)]"></div>
                     <h2 className="text-3xl md:text-5xl font-display font-bold text-white mb-2 tracking-tight drop-shadow-xl">{playerState.title || "Void Max"}</h2>
                     {playerState.type === 'tv' && <p className="text-white/70 text-lg font-medium mb-1">Temporada {playerState.season} • Episódio {playerState.episode}</p>}
                     <div className="flex flex-col items-center gap-2 mt-4">

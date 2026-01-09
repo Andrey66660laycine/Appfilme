@@ -1,11 +1,14 @@
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { storageService } from '../services/storageService';
+import { tmdb } from '../services/tmdbService';
+import { Movie } from '../types';
 
 interface CustomVideoPlayerProps {
   src: string;
   onClose: () => void;
-  onErrorFallback: () => void; // Função para chamar se der erro
+  onErrorFallback: () => void; 
+  onPlayerStable?: () => void; // Callback quando o player funciona
   title?: string;
   profileId?: string;
   tmdbId?: number;
@@ -13,19 +16,28 @@ interface CustomVideoPlayerProps {
   season?: number;
   episode?: number;
   initialTime?: number;
+  
+  // New Props
+  nextEpisode?: { season: number; episode: number; title?: string; onPlay: () => void };
+  recommendations?: Movie[];
+  onPlayRelated?: (movie: Movie) => void;
 }
 
 const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({ 
     src, 
     onClose, 
     onErrorFallback,
+    onPlayerStable,
     title = "Reproduzindo",
     profileId,
     tmdbId,
     type,
     season,
     episode,
-    initialTime = 0
+    initialTime = 0,
+    nextEpisode,
+    recommendations,
+    onPlayRelated
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -40,6 +52,11 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const [showControls, setShowControls] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   
+  // Smart Features
+  const [showNextEpButton, setShowNextEpButton] = useState(false);
+  const [showPostPlay, setShowPostPlay] = useState(false);
+  const [hasStabilized, setHasStabilized] = useState(false);
+
   // Advanced Features State
   const [isLocked, setIsLocked] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
@@ -59,12 +76,22 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       if (onErrorFallback) onErrorFallback();
   }, [onErrorFallback]);
 
+  // --- STABILITY CALLBACK ---
+  useEffect(() => {
+      if (playing && !hasStabilized && currentTime > 1) {
+          setHasStabilized(true);
+          if (onPlayerStable) onPlayerStable();
+      }
+  }, [playing, currentTime, hasStabilized, onPlayerStable]);
+
   // --- INITIALIZATION & HLS ---
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
     setIsLoading(true);
+    setShowPostPlay(false);
+    setShowNextEpButton(false);
     
     // IMPORTANT: Para MP4s diretos que não enviam headers CORS (ex: cdn.cnvslink.com), 
     // NÃO podemos usar crossOrigin="anonymous", senão o browser bloqueia (erro 403/cors).
@@ -247,10 +274,36 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
 
   const handleTimeUpdate = () => {
       if (videoRef.current) {
-          setCurrentTime(videoRef.current.currentTime);
+          const ct = videoRef.current.currentTime;
+          const dur = videoRef.current.duration;
+          setCurrentTime(ct);
+          
           if (videoRef.current.buffered.length > 0) {
               const bufferedEnd = videoRef.current.buffered.end(videoRef.current.buffered.length - 1);
               setBuffered(bufferedEnd);
+          }
+
+          // SMART LOGIC: NEXT EPISODE & POST PLAY
+          if (dur > 0) {
+              const remaining = dur - ct;
+
+              // TV Show: Show Next Episode Button when < 45s remaining
+              if (type === 'tv' && nextEpisode) {
+                  if (remaining < 45 && !showNextEpButton) setShowNextEpButton(true);
+                  if (remaining > 45 && showNextEpButton) setShowNextEpButton(false);
+              }
+
+              // Movie: Show Post Play (Credits) when < 60s remaining or finished
+              if (type === 'movie' && recommendations && recommendations.length > 0) {
+                   // Credits detection logic (simplified: last 5% or 90s)
+                   if ((remaining < 90 || ct > dur * 0.97) && !showPostPlay) {
+                       setShowPostPlay(true);
+                       setShowControls(false); // Hide controls to focus on recommendations
+                   }
+                   if (remaining > 90 && ct < dur * 0.97 && showPostPlay) {
+                       setShowPostPlay(false);
+                   }
+              }
           }
       }
   };
@@ -327,7 +380,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       <video
         ref={videoRef}
         key={src} // Force re-render on source change to reset attributes
-        className="w-full h-full object-contain"
+        className={`w-full h-full object-contain transition-all duration-700 ease-in-out ${showPostPlay ? 'scale-75 translate-y-[-10%] opacity-40 blur-sm' : 'scale-100 opacity-100'}`}
         onTimeUpdate={handleTimeUpdate}
         playsInline
         // @ts-ignore - Bypass TS check for referrerPolicy
@@ -357,6 +410,59 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           </div>
       )}
 
+      {/* --- NEXT EPISODE BUTTON --- */}
+      {showNextEpButton && nextEpisode && !showPostPlay && (
+          <div className="absolute bottom-20 right-6 z-[60] animate-slide-up">
+              <button 
+                onClick={nextEpisode.onPlay}
+                className="group relative bg-white text-black pl-5 pr-6 py-3 rounded-full font-bold flex items-center gap-3 shadow-[0_0_20px_rgba(255,255,255,0.3)] hover:scale-105 transition-all"
+              >
+                  <div className="absolute inset-0 rounded-full border-2 border-primary animate-pulse opacity-50"></div>
+                  <div className="flex flex-col items-start leading-none">
+                      <span className="text-[9px] uppercase font-bold text-black/60">Próximo</span>
+                      <span className="text-sm font-black">{nextEpisode.title || 'Episódio'}</span>
+                  </div>
+                  <span className="material-symbols-rounded fill-1 text-2xl group-hover:translate-x-1 transition-transform">skip_next</span>
+              </button>
+          </div>
+      )}
+
+      {/* --- POST PLAY (CREDITS) OVERLAY --- */}
+      {showPostPlay && recommendations && (
+          <div className="absolute inset-x-0 bottom-0 h-[60%] z-[70] bg-gradient-to-t from-black via-black/95 to-transparent animate-slide-up flex flex-col justify-end pb-8 px-6">
+              <div className="w-full max-w-5xl mx-auto">
+                  <div className="flex items-center justify-between mb-6">
+                      <div>
+                          <p className="text-white/50 text-xs font-bold uppercase tracking-widest mb-1">A seguir</p>
+                          <h2 className="text-2xl font-display font-bold text-white">Você também pode gostar</h2>
+                      </div>
+                      <button onClick={onClose} className="px-6 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-full text-white text-sm font-bold transition-colors">
+                          Fechar Player
+                      </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                      {recommendations.slice(0, 4).map((rec, i) => (
+                          <div 
+                             key={rec.id} 
+                             onClick={() => onPlayRelated && onPlayRelated(rec)}
+                             className="relative aspect-[16/9] rounded-xl overflow-hidden cursor-pointer group ring-1 ring-white/10 hover:ring-primary/50 transition-all hover:scale-[1.02]"
+                             style={{ animationDelay: `${i * 100}ms` }}
+                          >
+                               <img src={tmdb.getBackdropUrl(rec.backdrop_path, 'w780')} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt="" />
+                               <div className="absolute inset-0 bg-black/40 group-hover:bg-transparent transition-colors flex items-center justify-center">
+                                   <span className="material-symbols-rounded text-4xl text-white opacity-0 group-hover:opacity-100 transition-all scale-50 group-hover:scale-100 drop-shadow-lg">play_circle</span>
+                               </div>
+                               <div className="absolute bottom-0 left-0 w-full p-2 bg-gradient-to-t from-black to-transparent">
+                                   <p className="text-white text-xs font-bold truncate">{rec.title}</p>
+                               </div>
+                          </div>
+                      ))}
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* --- BUFFERING LOADER --- */}
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 bg-black/20">
@@ -376,7 +482,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       )}
 
       {/* --- CONTROLS OVERLAY --- */}
-      {!isLocked && (
+      {!isLocked && !showPostPlay && (
       <div className={`absolute inset-0 bg-gradient-to-b from-black/80 via-transparent to-black/90 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'} flex flex-col justify-between p-4 md:p-8 z-40 pointer-events-none`}>
           
           {/* TOP BAR */}

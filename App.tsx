@@ -16,7 +16,7 @@ import CustomVideoPlayer from './components/CustomVideoPlayer'; // IMPORTADO O P
 import { tmdb } from './services/tmdbService';
 import { storageService } from './services/storageService';
 import { supabase } from './services/supabase';
-import { Profile } from './types';
+import { Profile, Movie } from './types';
 
 // Context for Current Profile
 export const ProfileContext = createContext<Profile | null>(null);
@@ -27,8 +27,8 @@ interface PlayerState {
   tmdbId?: number; // Needed for history
   season?: number;
   episode?: number;
-  title?: string; // Para exibir no loader e no player nativo
-  backdrop?: string; // Para o background do loader
+  title?: string; 
+  backdrop?: string;
 }
 
 interface NextEpisodeInfo {
@@ -49,16 +49,17 @@ const App: React.FC = () => {
   
   // Player States
   const [playerState, setPlayerState] = useState<PlayerState | null>(null);
-  const [nativeVideoUrl, setNativeVideoUrl] = useState<string | null>(null); // URL recebida do Java
-  
-  // ANTI-LOOP: Lista de URLs que já falharam no player nativo
+  const [nativeVideoUrl, setNativeVideoUrl] = useState<string | null>(null); 
+  const [playerRecommendations, setPlayerRecommendations] = useState<Movie[]>([]); // Recomendações para o player
+  const [isPlayerStable, setIsPlayerStable] = useState(false); // TRAVA DE SEGURANÇA CONTRA LOOP
+
+  // ANTI-LOOP: Lista de URLs que já falharam
   const [failedUrls, setFailedUrls] = useState<Set<string>>(new Set());
   
-  const [showPlayerControls, setShowPlayerControls] = useState(true);
   const [isIframeLoaded, setIsIframeLoaded] = useState(false); 
   const [nextEpisode, setNextEpisode] = useState<NextEpisodeInfo | null>(null);
   
-  // Server Warning Modal State
+  // Server Warning Modal
   const [showServerNotice, setShowServerNotice] = useState(false);
   const [dontShowNoticeAgain, setDontShowNoticeAgain] = useState(false);
 
@@ -68,32 +69,77 @@ const App: React.FC = () => {
   const [adTimer, setAdTimer] = useState(15);
   
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const controlsTimeoutRef = useRef<number | null>(null);
   const adContainerRef = useRef<HTMLDivElement>(null);
   const loaderTimeoutRef = useRef<number | null>(null);
 
+  // --- SNIFFER DE REDE (Client-Side Network Interceptor) ---
+  // Tenta capturar links que o iframe pede se o Java falhar
+  useEffect(() => {
+    if (playerState && !nativeVideoUrl) {
+        const originalFetch = window.fetch;
+        const originalXHR = window.XMLHttpRequest.prototype.open;
+
+        // Hook Fetch
+        window.fetch = async (...args) => {
+            const [resource] = args;
+            const url = typeof resource === 'string' ? resource : (resource as Request).url;
+            checkUrlForVideo(url);
+            return originalFetch(...args);
+        };
+
+        // Hook XHR
+        window.XMLHttpRequest.prototype.open = function(method, url) {
+            if (typeof url === 'string') checkUrlForVideo(url);
+            return originalXHR.apply(this, arguments as any);
+        };
+
+        const checkUrlForVideo = (url: string) => {
+             // Basic extension check
+             if (url.match(/\.(mp4|m3u8|mkv)($|\?)/i)) {
+                 if (!failedUrls.has(url) && !isPlayerStable) {
+                     console.log("🕵️ Sniffer detectou vídeo:", url);
+                     window.receberVideo(url);
+                 }
+             }
+        };
+
+        return () => {
+            window.fetch = originalFetch;
+            window.XMLHttpRequest.prototype.open = originalXHR;
+        };
+    }
+  }, [playerState, nativeVideoUrl, failedUrls, isPlayerStable]);
+
+
   // --- NATIVE BRIDGE (JAVA -> JS) ---
   useEffect(() => {
-    // Define a função global que o Android vai chamar
     window.receberVideo = (url: string) => {
-        // Se a URL já falhou antes, IGNORA para evitar loop infinito
+        // 1. Se o player já está rodando liso, ignora links novos (evita loop/reload)
+        if (isPlayerStable) {
+            console.log("🛡️ Player estável. Ignorando novo link:", url);
+            return;
+        }
+
+        // 2. Se a URL já falhou antes, ignora
         if (failedUrls.has(url)) {
             console.log("🚫 URL ignorada (falhou anteriormente):", url);
             return;
         }
 
-        console.log("🎬 Link Nativo Recebido:", url);
+        // 3. Se é a mesma URL, ignora
+        if (nativeVideoUrl === url) return;
+
+        console.log("🎬 Link Nativo Recebido/Aceito:", url);
         if (url && (url.startsWith('http') || url.startsWith('blob'))) {
             setNativeVideoUrl(url);
         }
     };
 
     return () => {
-        // Cleanup opcional
         // @ts-ignore
         delete window.receberVideo;
     };
-  }, [failedUrls]); // Re-bind se a lista de falhas mudar
+  }, [failedUrls, isPlayerStable, nativeVideoUrl]);
 
   // --- APP DOWNLOAD MODAL CHECK ---
   useEffect(() => {
@@ -143,8 +189,7 @@ const App: React.FC = () => {
       window.history.pushState({ playerOpen: true }, "");
       
       const handlePopState = (event: PopStateEvent) => {
-        setPlayerState(null);
-        setNativeVideoUrl(null); // Reseta o player nativo também
+        closeNativePlayer();
         setIsIframeLoaded(false);
       };
 
@@ -184,10 +229,11 @@ const App: React.FC = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // --- NEXT EPISODE LOGIC ---
+  // --- NEXT EPISODE & RECOMMENDATIONS LOGIC ---
   useEffect(() => {
-    if (playerState && !nativeVideoUrl) { // Apenas para o Embed (Nativo tem controles próprios)
-        const calculateNextEpisode = async () => {
+    if (playerState) {
+        const fetchPlayerExtras = async () => {
+            // Next Episode Logic
             if (playerState.type === 'tv' && playerState.tmdbId && playerState.season && playerState.episode) {
                 try {
                     const seriesDetails = await tmdb.getTVDetails(String(playerState.tmdbId));
@@ -219,12 +265,23 @@ const App: React.FC = () => {
             } else {
                 setNextEpisode(null);
             }
+
+            // Recommendations Logic (For Movie Post-Play)
+            if (playerState.tmdbId) {
+                try {
+                    const recs = await tmdb.getRecommendations(String(playerState.tmdbId), playerState.type);
+                    setPlayerRecommendations(recs.slice(0, 5)); // Top 5
+                } catch (e) {
+                    console.error("Erro recs player", e);
+                }
+            }
         };
-        calculateNextEpisode();
+        fetchPlayerExtras();
     } else {
         setNextEpisode(null);
+        setPlayerRecommendations([]);
     }
-  }, [playerState, nativeVideoUrl]);
+  }, [playerState]);
 
   // --- ADS INJECTION ---
   useEffect(() => {
@@ -296,8 +353,9 @@ const App: React.FC = () => {
   // --- PLAY LOGIC ---
   const startVideoPlayer = async (config: PlayerState) => {
     setIsIframeLoaded(false);
-    setNativeVideoUrl(null); // Reseta URL nativa
-    setFailedUrls(new Set()); // Reseta lista de falhas ao iniciar novo vídeo
+    setNativeVideoUrl(null); 
+    setFailedUrls(new Set()); 
+    setIsPlayerStable(false); // Reseta estabilidade
     setPendingPlayerState(null);
 
     // Loader do Embed (fallback)
@@ -347,12 +405,19 @@ const App: React.FC = () => {
 
   const handleNextEpisode = () => {
       if (playerState && nextEpisode) {
+          // Reseta estabilidade para aceitar novo link
+          setIsPlayerStable(false);
           startVideoPlayer({
               ...playerState,
               season: nextEpisode.season,
               episode: nextEpisode.episode
           });
       }
+  };
+  
+  const handlePlayRelated = (movie: Movie) => {
+      setIsPlayerStable(false);
+      handleItemClick(movie.id, movie.media_type as any);
   };
 
   const handlePlayRequest = (config: PlayerState) => {
@@ -381,26 +446,33 @@ const App: React.FC = () => {
   const closeNativePlayer = () => {
       setNativeVideoUrl(null);
       setPlayerState(null);
+      setIsPlayerStable(false);
       if (window.history.state?.playerOpen) window.history.back();
   };
 
   // --- FALLBACK LOGIC ---
   const handleNativePlayerError = () => {
       console.log("⚠️ Player nativo falhou. Alternando para Embed (Fallback).");
+      setIsPlayerStable(false); // Player falhou, não é estável
       
-      // Adiciona a URL atual à lista negra para evitar loop
+      // Adiciona a URL atual à lista negra
       if (nativeVideoUrl) {
           setFailedUrls(prev => new Set(prev).add(nativeVideoUrl));
       }
 
       setNativeVideoUrl(null);
-      setIsIframeLoaded(false); // Reseta o estado do iframe para mostrar o loader novamente
+      setIsIframeLoaded(false); 
       
-      // Reinicia o timer do loader do iframe
       if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
       loaderTimeoutRef.current = window.setTimeout(() => {
           setIsIframeLoaded(true);
       }, 7000);
+  };
+  
+  // Callback chamado pelo CustomVideoPlayer quando começa a reproduzir com sucesso
+  const handlePlayerStable = () => {
+      console.log("✅ Player Nativo Estabilizado. Bloqueando injeções externas.");
+      setIsPlayerStable(true);
   };
 
   const getEmbedUrl = () => {
@@ -489,12 +561,16 @@ const App: React.FC = () => {
             src={nativeVideoUrl}
             onClose={closeNativePlayer}
             onErrorFallback={handleNativePlayerError} // Passando a função de fallback
+            onPlayerStable={handlePlayerStable} // Avisa que o player está rodando
             title={playerState.title}
             profileId={currentProfile.id}
             tmdbId={playerState.tmdbId}
             type={playerState.type}
             season={playerState.season}
             episode={playerState.episode}
+            nextEpisode={nextEpisode ? { ...nextEpisode, onPlay: handleNextEpisode } : undefined}
+            recommendations={playerRecommendations}
+            onPlayRelated={handlePlayRelated}
         />
       )}
 

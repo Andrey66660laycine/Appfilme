@@ -55,7 +55,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const [isLocked, setIsLocked] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
-  const [showCastMenu, setShowCastMenu] = useState(false); // CAST MENU STATE
+  const [showCastMenu, setShowCastMenu] = useState(false);
   const [lastTap, setLastTap] = useState(0);
   const [doubleTapAnimation, setDoubleTapAnimation] = useState<'left' | 'right' | null>(null);
   const [playAnimation, setPlayAnimation] = useState<'play' | 'pause' | null>(null);
@@ -66,7 +66,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const animationTimeoutRef = useRef<number | null>(null);
 
   // --- NATIVE BRIDGE COMMUNICATION ---
-  // Avisa o app Android quando o player fecha
   const handleClose = () => {
       if (window.Android && window.Android.onPlayerClosed) {
           try {
@@ -105,16 +104,14 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       if (onErrorFallback) onErrorFallback();
   }, [onErrorFallback]);
 
-  // --- STABILITY, GAMIFICATION & BRIDGE SIGNAL ---
+  // --- STABILITY & SIGNAL ---
   useEffect(() => {
       if (playing && !hasStabilized && currentTime > 1) {
           setHasStabilized(true);
           if (onPlayerStable) onPlayerStable();
           
-          // BRIDGE: Avisa o Android que o vídeo pegou (Stop Sniffing)
           if (window.Android && window.Android.onVideoPlaying) {
               try {
-                  console.log("Bridge: Sending onVideoPlaying");
                   window.Android.onVideoPlaying(src);
               } catch (e) { console.error("Erro bridge playing", e); }
           }
@@ -189,7 +186,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     };
   }, [src, initialTime, handleVideoError]);
 
-  // --- SAVE PROGRESS (FIX: Use Robust Upsert) ---
+  // --- SAVE PROGRESS ---
   useEffect(() => {
       progressIntervalRef.current = window.setInterval(() => {
           if (videoRef.current && profileId && tmdbId && type) {
@@ -198,15 +195,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
               const isFinished = (dur - ct < 180) || (ct > dur * 0.95);
               const progressToSave = isFinished ? dur : ct;
 
-              storageService.updateProgress(
-                  profileId, 
-                  tmdbId, 
-                  type, 
-                  progressToSave, 
-                  dur,
-                  season,
-                  episode
-              );
+              storageService.updateProgress(profileId, tmdbId, type, progressToSave, dur, season, episode);
           }
       }, 5000); 
 
@@ -215,19 +204,64 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       };
   }, [profileId, tmdbId, type, season, episode]);
 
-  // --- CASTING LOGIC ---
+  // --- DOWNLOAD FIX START ---
+  const handleDownload = () => {
+      if (isDownloading) return;
+      setIsDownloading(true);
+
+      // Tratamento de Dados (Evita undefined no JSON)
+      const safeTmdbId = tmdbId || 0;
+      const safeTitle = title || "Sem Título";
+      // Diferenciação explícita
+      const safeType = type === 'tv' ? 'tv' : 'movie'; 
+      // Se for filme, season/episode são 0
+      const safeSeason = safeType === 'tv' ? (season || 0) : 0;
+      const safeEpisode = safeType === 'tv' ? (episode || 0) : 0;
+
+      // Objeto Payload Completo
+      const payload = {
+          id: String(safeTmdbId), // ID como string para consistência
+          tmdbId: safeTmdbId,
+          title: safeTitle,
+          type: safeType,
+          season: safeSeason,
+          episode: safeEpisode,
+          url: src,
+          timestamp: Date.now()
+      };
+
+      try {
+          // *** AQUI ESTÁ A CORREÇÃO PRINCIPAL: JSON.stringify ***
+          const jsonString = JSON.stringify(payload);
+          
+          console.log("Iniciando download nativo com payload:", jsonString);
+
+          if (window.Android && window.Android.download) {
+              // Envia a URL do vídeo E o JSON stringificado
+              window.Android.download(src, jsonString);
+              
+              // Sinal de "Voltar" (Fecha o player para o usuário continuar navegando)
+              setTimeout(() => {
+                  handleClose();
+              }, 1500);
+          } else { 
+              fallbackDownload(); 
+          }
+      } catch (error) {
+          console.error("Erro ao preparar JSON de download:", error);
+          setIsDownloading(false);
+          fallbackDownload();
+      }
+  };
+  // --- DOWNLOAD FIX END ---
+
   const handleCastClick = () => {
-      // Prioridade 1: Bridge Nativo do Android (Seu app)
       if (window.Android && window.Android.castVideo) {
           try {
               window.Android.castVideo(src, title || "Video");
               return;
-          } catch(e) {
-              console.error("Native cast error", e);
-          }
+          } catch(e) { console.error("Native cast error", e); }
       }
-
-      // Prioridade 2: API Nativa do Navegador (Chrome/AirPlay)
       const video = videoRef.current;
       // @ts-ignore
       if (video && video.webkitShowPlaybackTargetPicker) {
@@ -235,19 +269,27 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           video.webkitShowPlaybackTargetPicker();
           return;
       }
-      
-      // Se não for possível usar nativo, mostra menu com opção externa
       setShowCastMenu(true);
   };
 
   const openExternalCastApp = () => {
-      // Abre Intent Android para apps como Web Video Caster / LocalCast / VLC
       const intentUrl = `intent:${src}#Intent;type=video/*;title=${encodeURIComponent(title || 'Video')};end`;
       window.location.href = intentUrl;
       setShowCastMenu(false);
   };
 
-  // --- CONTROLS ---
+  const fallbackDownload = () => {
+      const a = document.createElement('a');
+      a.href = src;
+      a.target = '_blank';
+      a.download = title || 'video';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => setIsDownloading(false), 1000);
+  };
+
+  // --- CONTROLS LOGIC ---
   const resetControlsTimeout = useCallback(() => {
       if (isLocked) return;
       setShowControls(true);
@@ -339,28 +381,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
               }
           }
       }
-  };
-
-  const handleDownload = () => {
-      if (isDownloading) return;
-      setIsDownloading(true);
-      if (window.Android && window.Android.download) {
-          try {
-              window.Android.download(src, title || 'video');
-              setTimeout(() => setIsDownloading(false), 2000);
-          } catch (e) { fallbackDownload(); }
-      } else { fallbackDownload(); }
-  };
-
-  const fallbackDownload = () => {
-      const a = document.createElement('a');
-      a.href = src;
-      a.target = '_blank';
-      a.download = title || 'video';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => setIsDownloading(false), 1000);
   };
 
   const formatTime = (time: number) => {

@@ -375,6 +375,22 @@ const App: React.FC = () => {
       if (window.history.state?.playerOpen) window.history.back();
   };
 
+  // --- FALLBACK LOGIC ---
+  // Se o player nativo der erro, essa função é chamada.
+  // Ela limpa a URL nativa (removendo o CustomVideoPlayer)
+  // mas mantém o playerState ativo, o que faz o React renderizar o Iframe automaticamente.
+  const handleNativePlayerError = () => {
+      console.log("⚠️ Player nativo falhou. Alternando para Embed (Fallback).");
+      setNativeVideoUrl(null);
+      setIsIframeLoaded(false); // Reseta o estado do iframe para mostrar o loader novamente
+      
+      // Reinicia o timer do loader do iframe
+      if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
+      loaderTimeoutRef.current = window.setTimeout(() => {
+          setIsIframeLoaded(true);
+      }, 7000);
+  };
+
   const getEmbedUrl = () => {
     if (!playerState) return '';
     if (playerState.type === 'movie') return `https://playerflixapi.com/filme/${playerState.id}`;
@@ -460,6 +476,7 @@ const App: React.FC = () => {
         <CustomVideoPlayer 
             src={nativeVideoUrl}
             onClose={closeNativePlayer}
+            onErrorFallback={handleNativePlayerError} // Passando a função de fallback
             title={playerState.title}
             profileId={currentProfile.id}
             tmdbId={playerState.tmdbId}
@@ -480,7 +497,15 @@ const App: React.FC = () => {
                     <div className="w-20 h-20 border-4 border-white/10 border-t-primary rounded-full animate-spin mb-8 shadow-[0_0_30px_rgba(242,13,242,0.4)]"></div>
                     <h2 className="text-3xl md:text-5xl font-display font-bold text-white mb-2 tracking-tight drop-shadow-xl">{playerState.title || "Void Max"}</h2>
                     {playerState.type === 'tv' && <p className="text-white/70 text-lg font-medium mb-1">Temporada {playerState.season} • Episódio {playerState.episode}</p>}
-                    <p className="text-white/30 text-[10px] uppercase tracking-widest mt-2 animate-pulse">Aguardando vídeo...</p>
+                    <div className="flex flex-col items-center gap-2 mt-4">
+                        <div className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></span>
+                            <span className="text-xs uppercase tracking-[0.2em] text-primary font-bold">Conectando</span>
+                        </div>
+                        <p className="text-white/30 text-[10px] uppercase tracking-widest mt-2 animate-pulse">
+                            Tentando conexão segura...
+                        </p>
+                    </div>
                 </div>
             </div>
             

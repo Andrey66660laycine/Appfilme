@@ -55,6 +55,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const [isLocked, setIsLocked] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+  const [showCastMenu, setShowCastMenu] = useState(false); // CAST MENU STATE
   const [lastTap, setLastTap] = useState(0);
   const [doubleTapAnimation, setDoubleTapAnimation] = useState<'left' | 'right' | null>(null);
   const [playAnimation, setPlayAnimation] = useState<'play' | 'pause' | null>(null);
@@ -64,9 +65,19 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const progressIntervalRef = useRef<number | null>(null);
   const animationTimeoutRef = useRef<number | null>(null);
 
+  // --- NATIVE BRIDGE COMMUNICATION ---
+  // Avisa o app Android quando o player fecha
+  const handleClose = () => {
+      if (window.Android && window.Android.onPlayerClosed) {
+          try {
+              window.Android.onPlayerClosed();
+          } catch (e) { console.error(e); }
+      }
+      onClose();
+  };
+
   // --- DYNAMIC THEME BASED ON GENRE ---
   useEffect(() => {
-      // Tenta buscar detalhes para descobrir o gênero e mudar o tema
       const fetchGenre = async () => {
           if (!tmdbId) return;
           try {
@@ -77,21 +88,14 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
               if (details && details.genres.length > 0) {
                   const genreId = details.genres[0].id;
                   const root = document.documentElement;
-                  
-                  // Horror
                   if (genreId === 27) root.style.setProperty('--primary-color', '#ff0000');
-                  // Sci-Fi
                   else if (genreId === 878) root.style.setProperty('--primary-color', '#00f2ff');
-                  // Romance
                   else if (genreId === 10749) root.style.setProperty('--primary-color', '#ff0080');
-                  // Default
                   else root.style.setProperty('--primary-color', '#f20df2');
               }
           } catch (e) {}
       };
       fetchGenre();
-
-      // Reset theme on unmount
       return () => document.documentElement.style.setProperty('--primary-color', '#f20df2');
   }, [tmdbId, type]);
 
@@ -101,16 +105,22 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       if (onErrorFallback) onErrorFallback();
   }, [onErrorFallback]);
 
-  // --- STABILITY & GAMIFICATION ---
+  // --- STABILITY, GAMIFICATION & BRIDGE SIGNAL ---
   useEffect(() => {
       if (playing && !hasStabilized && currentTime > 1) {
           setHasStabilized(true);
           if (onPlayerStable) onPlayerStable();
           
-          // Check Night Owl Achievement
+          // BRIDGE: Avisa o Android que o vídeo pegou (Stop Sniffing)
+          if (window.Android && window.Android.onVideoPlaying) {
+              try {
+                  window.Android.onVideoPlaying(src);
+              } catch (e) { console.error("Erro bridge playing", e); }
+          }
+          
           if (profileId) gamificationService.checkAchievements(profileId, 'late_night');
       }
-  }, [playing, currentTime, hasStabilized, onPlayerStable, profileId]);
+  }, [playing, currentTime, hasStabilized, onPlayerStable, profileId, src]);
 
   // --- INITIALIZATION ---
   useEffect(() => {
@@ -143,7 +153,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     video.addEventListener('pause', () => setPlaying(false));
     video.addEventListener('error', handleVideoError);
 
-    // HLS
     if (src.includes('.m3u8')) {
         if (window.Hls && window.Hls.isSupported()) {
             const hls = new window.Hls({ debug: false, enableWorker: true, lowLatencyMode: true });
@@ -179,17 +188,14 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     };
   }, [src, initialTime, handleVideoError]);
 
-  // --- SAVE PROGRESS & SMART RESUME LOGIC ---
+  // --- SAVE PROGRESS ---
   useEffect(() => {
       progressIntervalRef.current = window.setInterval(() => {
           if (videoRef.current && profileId && tmdbId && type) {
               const ct = videoRef.current.currentTime;
               const dur = videoRef.current.duration;
-              
-              // SMART RESUME: Se faltar menos de 3 minutos (180s) ou 95% visto, marca como completo
-              // Isso "zera" o progresso para o sistema de resume
               const isFinished = (dur - ct < 180) || (ct > dur * 0.95);
-              const progressToSave = isFinished ? dur : ct; // Salva o total se acabou
+              const progressToSave = isFinished ? dur : ct;
 
               storageService.updateProgress(
                   profileId, 
@@ -208,6 +214,36 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       };
   }, [profileId, tmdbId, type, season, episode]);
 
+  // --- CASTING LOGIC ---
+  const handleNativeCast = () => {
+      const video = videoRef.current;
+      if (!video) return;
+
+      // 1. Tenta API Nativa (AirPlay / Google Cast via Browser)
+      // @ts-ignore
+      if (video.webkitShowPlaybackTargetPicker) {
+          // @ts-ignore
+          video.webkitShowPlaybackTargetPicker();
+      } else if ((video as any).remote && (video as any).remote.state !== 'disconnected') {
+           // @ts-ignore
+           video.remote.prompt();
+      } else {
+          // Se não suportar nativo, abre o menu de opções
+          setShowCastMenu(true);
+      }
+  };
+
+  const openExternalCastApp = () => {
+      // Abre Intent Android para apps como Web Video Caster / LocalCast / VLC
+      // Isso é o que faz funcionar no Roku/FireTV via celular
+      const intentUrl = `intent:${src}#Intent;type=video/*;title=${encodeURIComponent(title || 'Video')};end`;
+      
+      // Tenta abrir Web Video Caster especificamente se possível, senão genérico
+      // Fallback para abrir no navegador padrão se falhar
+      window.location.href = intentUrl;
+      setShowCastMenu(false);
+  };
+
   // --- CONTROLS ---
   const resetControlsTimeout = useCallback(() => {
       if (isLocked) return;
@@ -217,6 +253,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           controlsTimeoutRef.current = window.setTimeout(() => {
               setShowControls(false);
               setShowSpeedMenu(false);
+              setShowCastMenu(false);
           }, 4000);
       }
   }, [playing, isLocked]);
@@ -306,7 +343,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       setIsDownloading(true);
       if (window.Android && window.Android.download) {
           try {
-              window.Android.download(src, title);
+              window.Android.download(src, title || 'video');
               setTimeout(() => setIsDownloading(false), 2000);
           } catch (e) { fallbackDownload(); }
       } else { fallbackDownload(); }
@@ -409,7 +446,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                           <p className="text-white/50 text-xs font-bold uppercase tracking-widest mb-1">A seguir</p>
                           <h2 className="text-2xl font-display font-bold text-white">Você também pode gostar</h2>
                       </div>
-                      <button onClick={onClose} className="px-6 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-full text-white text-sm font-bold transition-colors">
+                      <button onClick={handleClose} className="px-6 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-full text-white text-sm font-bold transition-colors">
                           Fechar Player
                       </button>
                   </div>
@@ -457,7 +494,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       <div className={`absolute inset-0 bg-gradient-to-b from-black/80 via-transparent to-black/90 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'} flex flex-col justify-between p-4 md:p-8 z-40 pointer-events-none`}>
           <div className="flex items-center justify-between pointer-events-auto">
               <div className="flex items-center gap-4">
-                  <button onClick={onClose} className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center text-white transition-all">
+                  <button onClick={handleClose} className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center text-white transition-all">
                       <span className="material-symbols-rounded text-3xl">arrow_back</span>
                   </button>
                   <div>
@@ -466,6 +503,36 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                   </div>
               </div>
               <div className="flex items-center gap-4">
+                  {/* CAST BUTTON */}
+                  <div className="relative">
+                      <button onClick={handleNativeCast} className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center text-white transition-all" title="Transmitir">
+                          <span className="material-symbols-rounded text-2xl">cast</span>
+                      </button>
+                      
+                      {/* CAST MENU */}
+                      {showCastMenu && (
+                          <div className="absolute top-full right-0 mt-2 w-56 bg-[#1a1a1a] border border-white/10 rounded-xl overflow-hidden shadow-2xl animate-fade-in-up origin-top-right">
+                              <div className="p-3 border-b border-white/10">
+                                  <p className="text-xs text-white/50 uppercase font-bold tracking-wider">Transmitir para</p>
+                              </div>
+                              <button onClick={openExternalCastApp} className="w-full text-left px-4 py-3 hover:bg-white/5 flex items-center gap-3 transition-colors group">
+                                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-colors">
+                                      <span className="material-symbols-rounded text-lg">open_in_new</span>
+                                  </div>
+                                  <div>
+                                      <p className="text-sm font-bold text-white">App Externo</p>
+                                      <p className="text-[10px] text-white/50">Roku, FireTV, DLNA</p>
+                                  </div>
+                              </button>
+                              <div className="bg-blue-500/10 p-3">
+                                  <p className="text-[9px] text-blue-200 leading-tight">
+                                      Para Roku/TVs sem Cast nativo, recomendamos usar o "Web Video Caster".
+                                  </p>
+                              </div>
+                          </div>
+                      )}
+                  </div>
+
                   <button onClick={handleDownload} className={`w-10 h-10 rounded-full flex items-center justify-center text-white transition-all ${isDownloading ? 'bg-primary text-white animate-pulse' : 'hover:bg-white/10'}`} title="Baixar">
                       <span className="material-symbols-rounded text-2xl">{isDownloading ? 'downloading' : 'download'}</span>
                   </button>

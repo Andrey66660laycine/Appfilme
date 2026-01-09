@@ -1,7 +1,6 @@
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { storageService } from '../services/storageService';
-import { gamificationService } from '../services/gamificationService';
 import { tmdb } from '../services/tmdbService';
 import { Movie } from '../types';
 
@@ -42,100 +41,101 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<any>(null);
   
+  // Player States
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [buffered, setBuffered] = useState(0);
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
-  const [showNextEpButton, setShowNextEpButton] = useState(false);
-  const [showPostPlay, setShowPostPlay] = useState(false);
-  const [hasStabilized, setHasStabilized] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [fitMode, setFitMode] = useState<'contain' | 'cover'>('contain');
+  
+  // UI Features
+  const [showNextEpButton, setShowNextEpButton] = useState(false);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
-  const [showCastMenu, setShowCastMenu] = useState(false);
-  const [lastTap, setLastTap] = useState(0);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [volume, setVolume] = useState(1);
+  const [brightness, setBrightness] = useState(1); // Simulado via CSS filter
+
+  // Gestures
   const [doubleTapAnimation, setDoubleTapAnimation] = useState<'left' | 'right' | null>(null);
-  const [playAnimation, setPlayAnimation] = useState<'play' | 'pause' | null>(null);
+  const [lastTapTime, setLastTapTime] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
   
-  // Estado para armazenar metadados adicionais (Poster/Backdrop)
+  // Data State
   const [mediaDetails, setMediaDetails] = useState<any>(null);
-
   const controlsTimeoutRef = useRef<number | null>(null);
-  const progressIntervalRef = useRef<number | null>(null);
-  const animationTimeoutRef = useRef<number | null>(null);
 
-  // --- NATIVE BRIDGE COMMUNICATION ---
-  const handleClose = () => {
-      if (window.Android && window.Android.onPlayerClosed) {
-          try {
-              window.Android.onPlayerClosed();
-          } catch (e) { console.error(e); }
+  // --- SAVE PROGRESS LOGIC (ROBUST) ---
+  const saveProgress = useCallback(async (force = false) => {
+      if (!videoRef.current || !profileId || !tmdbId || !type) return;
+      
+      const ct = videoRef.current.currentTime;
+      const dur = videoRef.current.duration;
+      
+      if (!dur || isNaN(dur)) return;
+
+      // Se passou de 95%, marca como visto (salva como 100% ou limpa)
+      // Aqui salvamos como dur para indicar completado
+      const isFinished = (ct > dur * 0.95);
+      const progressToSave = isFinished ? dur : ct;
+
+      // Só salva se tiver progresso significativo ou for forçado
+      if (ct > 5 || force) {
+          await storageService.updateProgress(
+              profileId, 
+              tmdbId, 
+              type, 
+              progressToSave, 
+              dur, 
+              season, 
+              episode,
+              // Passa metadados caso seja a primeira vez salvando
+              mediaDetails ? {
+                  title: mediaDetails.title || mediaDetails.name,
+                  poster_path: mediaDetails.poster_path,
+                  backdrop_path: mediaDetails.backdrop_path,
+                  vote_average: mediaDetails.vote_average
+              } : { title: title }
+          );
       }
-      onClose();
-  };
+  }, [profileId, tmdbId, type, season, episode, mediaDetails, title]);
 
-  // --- FETCH DETAILS & DYNAMIC THEME ---
+  // Save on interval
   useEffect(() => {
-      const fetchDetails = async () => {
-          if (!tmdbId) return;
-          try {
-              let details;
-              if (type === 'movie') details = await tmdb.getMovieDetails(String(tmdbId));
-              else details = await tmdb.getTVDetails(String(tmdbId));
-
-              if (details) {
-                  setMediaDetails(details); // Salva detalhes para o download
-                  
-                  // Aplica tema baseado no gênero
-                  if (details.genres && details.genres.length > 0) {
-                      const genreId = details.genres[0].id;
-                      const root = document.documentElement;
-                      if (genreId === 27) root.style.setProperty('--primary-color', '#ff0000');
-                      else if (genreId === 878) root.style.setProperty('--primary-color', '#00f2ff');
-                      else if (genreId === 10749) root.style.setProperty('--primary-color', '#ff0080');
-                      else root.style.setProperty('--primary-color', '#f20df2');
-                  }
-              }
-          } catch (e) {}
+      const interval = setInterval(() => saveProgress(), 10000); // Salva a cada 10s
+      return () => {
+          clearInterval(interval);
+          saveProgress(true); // Salva ao desmontar
       };
-      fetchDetails();
-      return () => document.documentElement.style.setProperty('--primary-color', '#f20df2');
-  }, [tmdbId, type]);
+  }, [saveProgress]);
 
-  // --- ERROR HANDLING ---
-  const handleVideoError = useCallback(() => {
-      console.warn("⚠️ Erro no vídeo nativo. Tentando fallback para Embed.");
-      if (onErrorFallback) onErrorFallback();
-  }, [onErrorFallback]);
-
-  // --- STABILITY & SIGNAL ---
+  // Save on Pause
   useEffect(() => {
-      if (playing && !hasStabilized && currentTime > 1) {
-          setHasStabilized(true);
-          if (onPlayerStable) onPlayerStable();
-          
-          if (window.Android && window.Android.onVideoPlaying) {
-              try {
-                  window.Android.onVideoPlaying(src);
-              } catch (e) { console.error("Erro bridge playing", e); }
-          }
-          
-          if (profileId) gamificationService.checkAchievements(profileId, 'late_night');
-      }
-  }, [playing, currentTime, hasStabilized, onPlayerStable, profileId, src]);
+      if (!playing) saveProgress(true);
+  }, [playing, saveProgress]);
+
 
   // --- INITIALIZATION ---
+  useEffect(() => {
+    const fetchDetails = async () => {
+        if (!tmdbId) return;
+        try {
+            let d;
+            if (type === 'movie') d = await tmdb.getMovieDetails(String(tmdbId));
+            else d = await tmdb.getTVDetails(String(tmdbId));
+            if (d) setMediaDetails(d);
+        } catch(e) {}
+    };
+    fetchDetails();
+  }, [tmdbId, type]);
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
     setIsLoading(true);
-    setShowPostPlay(false);
-    setShowNextEpButton(false);
     
     if (src.includes('.m3u8')) video.crossOrigin = "anonymous";
     else video.removeAttribute('crossOrigin');
@@ -146,41 +146,39 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
         if (initialTime > 0 && initialTime < video.duration) {
             video.currentTime = initialTime;
         }
-        video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+        video.play().catch(() => setPlaying(false));
     };
 
     const handleWaiting = () => setIsLoading(true);
     const handleCanPlay = () => setIsLoading(false);
+    const handleError = () => {
+        console.warn("Player Error, calling fallback");
+        if(onErrorFallback) onErrorFallback();
+    };
     
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
     video.addEventListener('waiting', handleWaiting);
     video.addEventListener('canplay', handleCanPlay);
-    video.addEventListener('playing', () => { setIsLoading(false); setPlaying(true); });
+    video.addEventListener('playing', () => { setIsLoading(false); setPlaying(true); if(onPlayerStable) onPlayerStable(); });
     video.addEventListener('pause', () => setPlaying(false));
-    video.addEventListener('error', handleVideoError);
+    video.addEventListener('error', handleError);
 
-    if (src.includes('.m3u8')) {
-        if (window.Hls && window.Hls.isSupported()) {
-            const hls = new window.Hls({ debug: false, enableWorker: true, lowLatencyMode: true });
-            hlsRef.current = hls;
-            hls.loadSource(src);
-            hls.attachMedia(video);
-            hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
-                setIsLoading(false);
-                if (initialTime > 0) video.currentTime = initialTime;
-                video.play().catch(() => {});
-            });
-            hls.on(window.Hls.Events.ERROR, (event: any, data: any) => {
-                if (data.fatal) {
-                   if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
-                   else handleVideoError();
-                }
-            });
-        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            video.src = src;
-        } else {
-            handleVideoError();
-        }
+    // HLS Setup
+    if (src.includes('.m3u8') && window.Hls && window.Hls.isSupported()) {
+        const hls = new window.Hls({ debug: false, enableWorker: true, lowLatencyMode: true });
+        hlsRef.current = hls;
+        hls.loadSource(src);
+        hls.attachMedia(video);
+        hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
+             if (initialTime > 0) video.currentTime = initialTime;
+             video.play().catch(() => {});
+        });
+        hls.on(window.Hls.Events.ERROR, (event: any, data: any) => {
+            if (data.fatal) {
+                if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
+                else handleError();
+            }
+        });
     } else {
         video.src = src;
     }
@@ -190,142 +188,72 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
         video.removeEventListener('loadedmetadata', handleLoadedMetadata);
         video.removeEventListener('waiting', handleWaiting);
         video.removeEventListener('canplay', handleCanPlay);
-        video.removeEventListener('error', handleVideoError);
+        video.removeEventListener('error', handleError);
     };
-  }, [src, initialTime, handleVideoError]);
+  }, [src]); // removed initialTime from dependency to prevent loop reset
 
-  // --- SAVE PROGRESS ---
-  useEffect(() => {
-      progressIntervalRef.current = window.setInterval(() => {
-          if (videoRef.current && profileId && tmdbId && type) {
-              const ct = videoRef.current.currentTime;
-              const dur = videoRef.current.duration;
-              const isFinished = (dur - ct < 180) || (ct > dur * 0.95);
-              const progressToSave = isFinished ? dur : ct;
 
-              storageService.updateProgress(profileId, tmdbId, type, progressToSave, dur, season, episode);
-          }
-      }, 5000); 
-
-      return () => {
-          if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
-      };
-  }, [profileId, tmdbId, type, season, episode]);
-
-  // --- DOWNLOAD LOGIC (FIXED JSON STRUCTURE) ---
-  const handleDownload = () => {
-      if (isDownloading) return;
-      setIsDownloading(true);
-
-      const safeTmdbId = tmdbId || 0;
-      const safeTitle = title || "Sem Título";
-      const safeType = type === 'tv' ? 'tv' : 'movie'; 
-      const safeSeason = safeType === 'tv' ? (season || 0) : 0;
-      const safeEpisode = safeType === 'tv' ? (episode || 0) : 0;
-      
-      // Constrói URLs absolutas para o Android baixar as imagens
-      const posterUrl = mediaDetails?.poster_path ? tmdb.getPosterUrl(mediaDetails.poster_path, 'w500') : '';
-      const backdropUrl = mediaDetails?.backdrop_path ? tmdb.getBackdropUrl(mediaDetails.backdrop_path, 'w780') : '';
-
-      // Payload JSON estrito conforme solicitado
-      const payload = {
-          id: String(safeTmdbId), // ID como string
-          title: safeTitle,
-          type: safeType,
-          season: safeSeason,
-          episode: safeEpisode,
-          poster: posterUrl,
-          backdrop: backdropUrl
-      };
-
-      try {
-          const jsonString = JSON.stringify(payload);
-          console.log("Iniciando download nativo com payload:", jsonString);
-
-          if (window.Android && window.Android.download) {
-              window.Android.download(src, jsonString);
-              
-              // Sinal de "Voltar" após 1.5s
-              setTimeout(() => {
-                  handleClose();
-              }, 1500);
-          } else { 
-              fallbackDownload(); 
-          }
-      } catch (error) {
-          console.error("Erro ao preparar JSON de download:", error);
-          setIsDownloading(false);
-          fallbackDownload();
-      }
-  };
-
-  const handleCastClick = () => {
-      if (window.Android && window.Android.castVideo) {
-          try {
-              window.Android.castVideo(src, title || "Video");
-              return;
-          } catch(e) { console.error("Native cast error", e); }
-      }
-      const video = videoRef.current;
-      // @ts-ignore
-      if (video && video.webkitShowPlaybackTargetPicker) {
-          // @ts-ignore
-          video.webkitShowPlaybackTargetPicker();
-          return;
-      }
-      setShowCastMenu(true);
-  };
-
-  const openExternalCastApp = () => {
-      const intentUrl = `intent:${src}#Intent;type=video/*;title=${encodeURIComponent(title || 'Video')};end`;
-      window.location.href = intentUrl;
-      setShowCastMenu(false);
-  };
-
-  const fallbackDownload = () => {
-      const a = document.createElement('a');
-      a.href = src;
-      a.target = '_blank';
-      a.download = title || 'video';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => setIsDownloading(false), 1000);
-  };
-
-  // --- CONTROLS LOGIC ---
-  const resetControlsTimeout = useCallback(() => {
+  // --- CONTROLS & GESTURES ---
+  
+  const handleTouchEnd = (e: React.TouchEvent) => {
       if (isLocked) return;
+      const now = Date.now();
+      const tapLength = now - lastTapTime;
+      
+      if (tapLength < 300 && tapLength > 0) {
+          // Double Tap logic
+          const touchX = e.changedTouches[0].clientX;
+          const width = window.innerWidth;
+          
+          if (touchX < width * 0.3) {
+              skip(-10);
+              setDoubleTapAnimation('left');
+          } else if (touchX > width * 0.7) {
+              skip(10);
+              setDoubleTapAnimation('right');
+          } else {
+              togglePlay();
+          }
+          setTimeout(() => setDoubleTapAnimation(null), 600);
+      } else {
+          // Single Tap toggle controls
+          setShowControls(prev => !prev);
+      }
+      setLastTapTime(now);
+  };
+
+  const skip = (sec: number) => {
+      if (videoRef.current) {
+          videoRef.current.currentTime += sec;
+          resetControlsTimeout();
+      }
+  };
+
+  const togglePlay = () => {
+      if (!videoRef.current) return;
+      if (videoRef.current.paused) {
+          videoRef.current.play();
+          setPlaying(true);
+      } else {
+          videoRef.current.pause();
+          setPlaying(false);
+      }
+      resetControlsTimeout();
+  };
+
+  const resetControlsTimeout = useCallback(() => {
       setShowControls(true);
       if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-      if (playing) {
-          controlsTimeoutRef.current = window.setTimeout(() => {
-              setShowControls(false);
-              setShowSpeedMenu(false);
-              setShowCastMenu(false);
-          }, 4000);
+      if (playing && !isLocked) {
+          controlsTimeoutRef.current = window.setTimeout(() => setShowControls(false), 4000);
       }
   }, [playing, isLocked]);
 
   useEffect(() => {
-      const events = ['mousemove', 'touchstart', 'click', 'keydown'];
-      events.forEach(e => window.addEventListener(e, resetControlsTimeout));
       resetControlsTimeout();
-      return () => {
-          events.forEach(e => window.removeEventListener(e, resetControlsTimeout));
-          if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-      };
+      window.addEventListener('mousemove', resetControlsTimeout);
+      return () => window.removeEventListener('mousemove', resetControlsTimeout);
   }, [resetControlsTimeout]);
-
-  const togglePlay = (e?: React.MouseEvent) => {
-      e?.stopPropagation();
-      if (!videoRef.current) return;
-      setPlayAnimation(videoRef.current.paused ? 'play' : 'pause');
-      if (animationTimeoutRef.current) clearTimeout(animationTimeoutRef.current);
-      animationTimeoutRef.current = window.setTimeout(() => setPlayAnimation(null), 600);
-      videoRef.current.paused ? videoRef.current.play() : videoRef.current.pause();
-      resetControlsTimeout();
-  };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
       const time = parseFloat(e.target.value);
@@ -333,298 +261,205 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           videoRef.current.currentTime = time;
           setCurrentTime(time);
       }
-      resetControlsTimeout();
   };
 
-  const skip = (seconds: number) => {
-      if (videoRef.current) {
-          videoRef.current.currentTime += seconds;
-          resetControlsTimeout();
-      }
-  };
+  // --- DOWNLOAD FIX ---
+  const handleDownload = () => {
+      if (isDownloading) return;
+      setIsDownloading(true);
 
-  const changeSpeed = (speed: number) => {
-      if (videoRef.current) {
-          videoRef.current.playbackRate = speed;
-          setPlaybackSpeed(speed);
-          setShowSpeedMenu(false);
-      }
-  };
+      const safeTmdbId = tmdbId || 0;
+      const safeType = type === 'tv' ? 'tv' : 'movie'; 
+      const posterUrl = mediaDetails?.poster_path ? tmdb.getPosterUrl(mediaDetails.poster_path, 'w500') : '';
+      
+      const payload = {
+          id: String(safeTmdbId),
+          title: title || "Video",
+          type: safeType,
+          season: safeType === 'tv' ? (season || 0) : 0,
+          episode: safeType === 'tv' ? (episode || 0) : 0,
+          poster: posterUrl,
+          backdrop: mediaDetails?.backdrop_path ? tmdb.getBackdropUrl(mediaDetails.backdrop_path, 'w780') : ''
+      };
 
-  const toggleFullscreen = () => {
-      if (!document.fullscreenElement) {
-          containerRef.current?.requestFullscreen();
-          setIsFullscreen(true);
-      } else {
-          document.exitFullscreen();
-          setIsFullscreen(false);
-      }
-  };
-
-  const handleTimeUpdate = () => {
-      if (videoRef.current) {
-          const ct = videoRef.current.currentTime;
-          const dur = videoRef.current.duration;
-          setCurrentTime(ct);
-          if (videoRef.current.buffered.length > 0) {
-              setBuffered(videoRef.current.buffered.end(videoRef.current.buffered.length - 1));
+      try {
+          if (window.Android && window.Android.download) {
+              window.Android.download(src, JSON.stringify(payload));
+              setTimeout(() => {
+                  onClose();
+                  if (window.Android?.onPlayerClosed) window.Android.onPlayerClosed();
+              }, 1500);
+          } else {
+              const a = document.createElement('a');
+              a.href = src;
+              a.download = title || 'video';
+              a.click();
+              setIsDownloading(false);
           }
-
-          if (dur > 0) {
-              const remaining = dur - ct;
-              if (type === 'tv' && nextEpisode) {
-                  if (remaining < 45 && !showNextEpButton) setShowNextEpButton(true);
-                  if (remaining > 45 && showNextEpButton) setShowNextEpButton(false);
-              }
-              if (type === 'movie' && recommendations && recommendations.length > 0) {
-                   if ((remaining < 90 || ct > dur * 0.97) && !showPostPlay) {
-                       setShowPostPlay(true);
-                       setShowControls(false); 
-                   }
-                   if (remaining > 90 && ct < dur * 0.97 && showPostPlay) setShowPostPlay(false);
-              }
-          }
-      }
+      } catch (e) { setIsDownloading(false); }
   };
 
   const formatTime = (time: number) => {
-      if (isNaN(time)) return "0:00";
-      const hours = Math.floor(time / 3600);
-      const minutes = Math.floor((time % 3600) / 60);
-      const seconds = Math.floor(time % 60);
-      if (hours > 0) return `${hours}:${minutes < 10 ? '0' : ''}${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
-      return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-      if (isLocked) return;
-      const currentTimeTap = new Date().getTime();
-      const tapLength = currentTimeTap - lastTap;
-      if (tapLength < 300 && tapLength > 0) {
-          const touchX = e.changedTouches[0].clientX;
-          const screenWidth = window.innerWidth;
-          if (touchX < screenWidth / 3) { skip(-10); setDoubleTapAnimation('left'); } 
-          else if (touchX > (screenWidth * 2) / 3) { skip(10); setDoubleTapAnimation('right'); } 
-          else { togglePlay(); }
-          setTimeout(() => setDoubleTapAnimation(null), 500);
-      } else { if (!showControls) setShowControls(true); }
-      setLastTap(currentTimeTap);
+      const h = Math.floor(time / 3600);
+      const m = Math.floor((time % 3600) / 60);
+      const s = Math.floor(time % 60);
+      return h > 0 ? `${h}:${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}` : `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
   return (
     <div 
       ref={containerRef} 
-      className="fixed inset-0 z-[9999] bg-black overflow-hidden flex flex-col justify-center font-body group select-none animate-fade-in"
+      className="fixed inset-0 z-[9999] bg-black overflow-hidden select-none"
       onTouchEnd={handleTouchEnd}
-      onDoubleClick={(e) => e.preventDefault()}
+      style={{ filter: `brightness(${brightness})` }}
     >
       <video
         ref={videoRef}
-        key={src}
-        className={`w-full h-full object-contain transition-all duration-700 ease-in-out ${showPostPlay ? 'scale-75 translate-y-[-10%] opacity-40 blur-sm' : 'scale-100 opacity-100'}`}
-        onTimeUpdate={handleTimeUpdate}
+        className={`w-full h-full object-${fitMode} transition-all duration-300`}
+        onTimeUpdate={() => {
+            if(videoRef.current) {
+                setCurrentTime(videoRef.current.currentTime);
+                if(duration > 0 && duration - videoRef.current.currentTime < 40 && nextEpisode) setShowNextEpButton(true);
+            }
+        }}
         playsInline
-        // @ts-ignore
-        referrerPolicy="no-referrer"
       />
 
-      {playAnimation && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-50 animate-ping-once">
-               <div className="w-20 h-20 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-md">
-                   <span className="material-symbols-rounded text-white text-5xl">
-                       {playAnimation === 'play' ? 'play_arrow' : 'pause'}
-                   </span>
-               </div>
-          </div>
-      )}
-
+      {/* DOUBLE TAP ANIMATION */}
       {doubleTapAnimation && (
-          <div className={`absolute top-1/2 -translate-y-1/2 ${doubleTapAnimation === 'left' ? 'left-10 md:left-32' : 'right-10 md:right-32'} z-50 flex flex-col items-center justify-center pointer-events-none`}>
-               <div className="w-full h-full bg-white/10 rounded-full p-4 backdrop-blur-md animate-ping-fast">
-                   <span className="material-symbols-rounded text-white text-4xl drop-shadow-md">
+          <div className={`absolute top-1/2 -translate-y-1/2 ${doubleTapAnimation === 'left' ? 'left-20' : 'right-20'} z-50 flex flex-col items-center pointer-events-none animate-ping-once`}>
+               <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center mb-2">
+                   <span className="material-symbols-rounded text-white text-3xl">
                        {doubleTapAnimation === 'left' ? 'replay_10' : 'forward_10'}
                    </span>
                </div>
-               <span className="text-white font-bold text-sm mt-2 drop-shadow-md">10s</span>
+               <span className="text-white font-bold text-xs shadow-black drop-shadow-md">10s</span>
           </div>
       )}
 
-      {showNextEpButton && nextEpisode && !showPostPlay && (
-          <div className="absolute bottom-20 right-6 z-[60] animate-slide-up">
-              <button 
-                onClick={nextEpisode.onPlay}
-                className="group relative bg-white text-black pl-5 pr-6 py-3 rounded-full font-bold flex items-center gap-3 shadow-[0_0_20px_rgba(255,255,255,0.3)] hover:scale-105 transition-all"
-              >
-                  <div className="absolute inset-0 rounded-full border-2 border-primary animate-pulse opacity-50"></div>
-                  <div className="flex flex-col items-start leading-none">
-                      <span className="text-[9px] uppercase font-bold text-black/60">Próximo</span>
-                      <span className="text-sm font-black">{nextEpisode.title || 'Episódio'}</span>
-                  </div>
-                  <span className="material-symbols-rounded fill-1 text-2xl group-hover:translate-x-1 transition-transform">skip_next</span>
-              </button>
-          </div>
-      )}
-
-      {showPostPlay && recommendations && (
-          <div className="absolute inset-x-0 bottom-0 h-[60%] z-[70] bg-gradient-to-t from-black via-black/95 to-transparent animate-slide-up flex flex-col justify-end pb-8 px-6">
-              <div className="w-full max-w-5xl mx-auto">
-                  <div className="flex items-center justify-between mb-6">
-                      <div>
-                          <p className="text-white/50 text-xs font-bold uppercase tracking-widest mb-1">A seguir</p>
-                          <h2 className="text-2xl font-display font-bold text-white">Você também pode gostar</h2>
-                      </div>
-                      <button onClick={handleClose} className="px-6 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-full text-white text-sm font-bold transition-colors">
-                          Fechar Player
-                      </button>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                      {recommendations.slice(0, 4).map((rec, i) => (
-                          <div 
-                             key={rec.id} 
-                             onClick={() => onPlayRelated && onPlayRelated(rec)}
-                             className="relative aspect-[16/9] rounded-xl overflow-hidden cursor-pointer group ring-1 ring-white/10 hover:ring-primary/50 transition-all hover:scale-[1.02]"
-                             style={{ animationDelay: `${i * 100}ms` }}
-                          >
-                               <img src={tmdb.getBackdropUrl(rec.backdrop_path, 'w780')} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt="" />
-                               <div className="absolute inset-0 bg-black/40 group-hover:bg-transparent transition-colors flex items-center justify-center">
-                                   <span className="material-symbols-rounded text-4xl text-white opacity-0 group-hover:opacity-100 transition-all scale-50 group-hover:scale-100 drop-shadow-lg">play_circle</span>
-                               </div>
-                               <div className="absolute bottom-0 left-0 w-full p-2 bg-gradient-to-t from-black to-transparent">
-                                   <p className="text-white text-xs font-bold truncate">{rec.title}</p>
-                                   <p className="text-primary text-[10px] font-bold">{rec.vote_average.toFixed(1)} ★</p>
-                               </div>
-                          </div>
-                      ))}
-                  </div>
-              </div>
-          </div>
-      )}
-
+      {/* LOADING */}
       {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 bg-black/20">
-          <div className="w-16 h-16 border-4 border-white/10 border-t-primary rounded-full animate-spin shadow-[0_0_30px_var(--primary-color)]"></div>
-        </div>
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+              <div className="w-14 h-14 border-4 border-white/20 border-t-primary rounded-full animate-spin"></div>
+          </div>
       )}
 
+      {/* LOCKED STATE */}
       {isLocked && (
-          <button 
-            onClick={() => setIsLocked(false)} 
-            className="absolute top-8 left-1/2 -translate-x-1/2 z-[60] bg-white/10 backdrop-blur-md border border-white/20 rounded-full px-4 py-2 flex items-center gap-2 text-white animate-pulse"
-          >
-              <span className="material-symbols-rounded">lock</span>
-              <span className="text-xs font-bold uppercase">Toque para desbloquear</span>
+          <button onClick={() => setIsLocked(false)} className="absolute top-10 left-1/2 -translate-x-1/2 bg-white/10 backdrop-blur-md border border-white/20 px-4 py-2 rounded-full flex items-center gap-2 z-50 animate-pulse">
+              <span className="material-symbols-rounded text-white">lock</span>
+              <span className="text-white text-xs font-bold uppercase">Destravar</span>
           </button>
       )}
 
-      {!isLocked && !showPostPlay && (
-      <div className={`absolute inset-0 bg-gradient-to-b from-black/80 via-transparent to-black/90 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'} flex flex-col justify-between p-4 md:p-8 z-40 pointer-events-none`}>
-          <div className="flex items-center justify-between pointer-events-auto">
-              <div className="flex items-center gap-4">
-                  <button onClick={handleClose} className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center text-white transition-all">
-                      <span className="material-symbols-rounded text-3xl">arrow_back</span>
-                  </button>
-                  <div>
-                      <h2 className="text-white font-bold text-base md:text-lg drop-shadow-md leading-none">{title}</h2>
-                      {(season && episode) && <p className="text-white/60 text-xs mt-1">S{season}:E{episode}</p>}
-                  </div>
-              </div>
-              <div className="flex items-center gap-4">
-                  {/* CAST BUTTON */}
-                  <div className="relative">
-                      <button onClick={handleCastClick} className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center text-white transition-all" title="Transmitir">
-                          <span className="material-symbols-rounded text-2xl">cast</span>
-                      </button>
-                      
-                      {/* CAST MENU */}
-                      {showCastMenu && (
-                          <div className="absolute top-full right-0 mt-2 w-56 bg-[#1a1a1a] border border-white/10 rounded-xl overflow-hidden shadow-2xl animate-fade-in-up origin-top-right">
-                              <div className="p-3 border-b border-white/10">
-                                  <p className="text-xs text-white/50 uppercase font-bold tracking-wider">Transmitir para</p>
-                              </div>
-                              <button onClick={openExternalCastApp} className="w-full text-left px-4 py-3 hover:bg-white/5 flex items-center gap-3 transition-colors group">
-                                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-colors">
-                                      <span className="material-symbols-rounded text-lg">open_in_new</span>
-                                  </div>
-                                  <div>
-                                      <p className="text-sm font-bold text-white">App Externo</p>
-                                      <p className="text-[10px] text-white/50">Roku, FireTV, DLNA</p>
-                                  </div>
-                              </button>
-                              <div className="bg-blue-500/10 p-3">
-                                  <p className="text-[9px] text-blue-200 leading-tight">
-                                      Para Roku/TVs sem Cast nativo, recomendamos usar o "Web Video Caster".
-                                  </p>
-                              </div>
-                          </div>
-                      )}
-                  </div>
+      {/* CONTROLS OVERLAY */}
+      {!isLocked && (
+        <div className={`absolute inset-0 bg-gradient-to-b from-black/80 via-transparent to-black/90 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'} flex flex-col justify-between z-40`}>
+            
+            {/* TOP BAR */}
+            <div className="flex items-center justify-between p-4 pt-6 md:p-8">
+                <div className="flex items-center gap-4">
+                    <button onClick={() => { saveProgress(true); onClose(); }} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors">
+                        <span className="material-symbols-rounded text-white text-3xl">arrow_back</span>
+                    </button>
+                    <div>
+                        <h2 className="text-white font-bold text-base line-clamp-1 drop-shadow-md">{title}</h2>
+                        {(season && episode) && <p className="text-white/60 text-xs">S{season}:E{episode}</p>}
+                    </div>
+                </div>
+                
+                <div className="flex items-center gap-4">
+                    <button onClick={handleDownload} className={`w-10 h-10 flex items-center justify-center rounded-full transition-colors ${isDownloading ? 'text-primary animate-pulse' : 'text-white hover:bg-white/10'}`}>
+                        <span className="material-symbols-rounded text-2xl">download</span>
+                    </button>
+                    <button onClick={() => setFitMode(prev => prev === 'contain' ? 'cover' : 'contain')} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-white">
+                        <span className="material-symbols-rounded text-2xl">{fitMode === 'contain' ? 'fit_screen' : 'crop_free'}</span>
+                    </button>
+                    <button onClick={() => setIsLocked(true)} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-white">
+                        <span className="material-symbols-rounded text-2xl">lock_open</span>
+                    </button>
+                </div>
+            </div>
 
-                  <button onClick={handleDownload} className={`w-10 h-10 rounded-full flex items-center justify-center text-white transition-all ${isDownloading ? 'bg-primary text-white animate-pulse' : 'hover:bg-white/10'}`} title="Baixar">
-                      <span className="material-symbols-rounded text-2xl">{isDownloading ? 'downloading' : 'download'}</span>
-                  </button>
-                  <button onClick={() => setIsLocked(true)} className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center text-white transition-all" title="Bloquear Tela">
-                      <span className="material-symbols-rounded text-2xl">lock_open</span>
-                  </button>
-              </div>
-          </div>
+            {/* CENTER PLAY BUTTON */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto">
+                {!isLoading && (
+                    <button onClick={togglePlay} className="w-20 h-20 bg-black/40 backdrop-blur-sm border border-white/10 rounded-full flex items-center justify-center hover:scale-110 transition-transform group">
+                        <span className="material-symbols-rounded text-5xl text-white fill-1 ml-1">{playing ? 'pause' : 'play_arrow'}</span>
+                    </button>
+                )}
+            </div>
 
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto hidden md:block">
-             {!isLoading && (
-                 <button onClick={togglePlay} className="w-20 h-20 rounded-full bg-black/40 hover:bg-primary/80 text-white flex items-center justify-center backdrop-blur-sm border border-white/10 transition-all hover:scale-110 shadow-2xl group">
-                    <span className="material-symbols-rounded text-5xl fill-1 ml-1 group-hover:scale-110 transition-transform">{playing ? 'pause' : 'play_arrow'}</span>
-                 </button>
-             )}
-          </div>
+            {/* NEXT EPISODE POPUP */}
+            {showNextEpButton && nextEpisode && (
+                <div className="absolute bottom-24 right-6 animate-slide-up pointer-events-auto">
+                    <button onClick={nextEpisode.onPlay} className="bg-white text-black pl-5 pr-2 py-2 rounded-full font-bold flex items-center gap-2 shadow-lg hover:scale-105 transition-transform">
+                        <div className="flex flex-col items-start leading-none">
+                            <span className="text-[10px] text-gray-500 uppercase font-bold">Próximo</span>
+                            <span className="text-sm font-black">{nextEpisode.title}</span>
+                        </div>
+                        <div className="w-10 h-10 rounded-full bg-black text-white flex items-center justify-center">
+                            <span className="material-symbols-rounded text-2xl">skip_next</span>
+                        </div>
+                    </button>
+                </div>
+            )}
 
-          <div className="pointer-events-auto pb-safe">
-              <div className="flex items-center gap-4 group/seekbar relative mb-2">
-                  <div className="relative flex-1 h-1.5 bg-white/20 rounded-full cursor-pointer group-hover/seekbar:h-2 transition-all">
-                      <div className="absolute top-0 left-0 h-full bg-white/30 rounded-full transition-all" style={{ width: `${(buffered / duration) * 100}%` }}></div>
-                      <div className="absolute top-0 left-0 h-full bg-primary rounded-full transition-all relative shadow-[0_0_10px_var(--primary-color)]" style={{ width: `${(currentTime / duration) * 100}%` }}>
-                          <div className="absolute right-[-6px] top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg scale-0 group-hover/seekbar:scale-100 transition-transform"></div>
-                      </div>
-                      <input type="range" min="0" max={duration || 100} value={currentTime} onChange={handleSeek} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                  </div>
-              </div>
+            {/* BOTTOM BAR */}
+            <div className="p-4 pb-8 md:p-8 pointer-events-auto">
+                <div className="flex items-center justify-between text-xs font-bold text-white/80 mb-2 px-1">
+                    <span>{formatTime(currentTime)}</span>
+                    <span>{formatTime(duration)}</span>
+                </div>
+                
+                {/* SEEKBAR */}
+                <div className="relative h-6 group flex items-center cursor-pointer">
+                    <input 
+                        type="range" 
+                        min="0" 
+                        max={duration || 100} 
+                        value={currentTime} 
+                        onChange={handleSeek} 
+                        className="absolute inset-0 w-full opacity-0 cursor-pointer z-20"
+                    />
+                    <div className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden relative">
+                         <div className="h-full bg-primary relative transition-all" style={{ width: `${(currentTime / duration) * 100}%` }}>
+                             <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg scale-0 group-hover:scale-150 transition-transform"></div>
+                         </div>
+                    </div>
+                </div>
 
-              <div className="flex items-center justify-between px-1">
-                   <div className="flex items-center gap-4">
-                       <button onClick={togglePlay} className="md:hidden text-white hover:text-primary transition-colors">
-                           <span className="material-symbols-rounded text-3xl shadow-lg fill-1">{playing ? 'pause' : 'play_arrow'}</span>
-                       </button>
-                       <span className="text-xs font-bold text-white/90 font-mono tracking-wider">{formatTime(currentTime)} / {formatTime(duration)}</span>
-                   </div>
+                <div className="flex items-center justify-between mt-2">
+                    <div className="flex items-center gap-4">
+                        <button onClick={() => skip(-10)} className="text-white hover:text-white/80"><span className="material-symbols-rounded text-3xl">replay_10</span></button>
+                        <button onClick={togglePlay} className="text-white hover:text-primary"><span className="material-symbols-rounded text-4xl fill-1">{playing ? 'pause' : 'play_arrow'}</span></button>
+                        <button onClick={() => skip(10)} className="text-white hover:text-white/80"><span className="material-symbols-rounded text-3xl">forward_10</span></button>
+                    </div>
 
-                   <div className="flex items-center gap-2 sm:gap-4 relative">
-                       <div className="relative">
-                           <button onClick={() => setShowSpeedMenu(!showSpeedMenu)} className="px-2 py-1 rounded hover:bg-white/10 text-white/90 text-xs font-bold border border-white/20 flex items-center gap-1">
-                               {playbackSpeed}x
-                           </button>
-                           {showSpeedMenu && (
-                               <div className="absolute bottom-full right-0 mb-2 bg-[#1a1a1a] border border-white/10 rounded-lg overflow-hidden shadow-xl min-w-[80px] animate-fade-in-up">
-                                   {[0.5, 1, 1.25, 1.5, 2].map(s => (
-                                       <button key={s} onClick={() => changeSpeed(s)} className={`block w-full text-left px-4 py-2 text-xs font-bold hover:bg-white/10 ${playbackSpeed === s ? 'text-primary' : 'text-white'}`}>
-                                           {s}x
-                                       </button>
-                                   ))}
-                               </div>
-                           )}
-                       </div>
-                       <button onClick={(e) => { e.stopPropagation(); skip(10); }} className="text-white/70 hover:text-white transition-colors active:scale-90"><span className="material-symbols-rounded text-2xl">forward_10</span></button>
-                       <button onClick={toggleFullscreen} className="text-white hover:text-primary transition-colors"><span className="material-symbols-rounded text-3xl shadow-lg">{isFullscreen ? 'fullscreen_exit' : 'fullscreen'}</span></button>
-                   </div>
-              </div>
-          </div>
-      </div>
+                    <div className="flex items-center gap-4 relative">
+                        <button onClick={() => setShowSpeedMenu(!showSpeedMenu)} className="bg-white/10 px-3 py-1 rounded text-xs font-bold text-white hover:bg-white/20">
+                            {playbackSpeed}x
+                        </button>
+                        {showSpeedMenu && (
+                            <div className="absolute bottom-full right-0 mb-2 bg-[#1a1a1a] border border-white/10 rounded-lg overflow-hidden w-20 animate-fade-in-up">
+                                {[0.5, 1.0, 1.5, 2.0].map(s => (
+                                    <button key={s} onClick={() => { if(videoRef.current) videoRef.current.playbackRate = s; setPlaybackSpeed(s); setShowSpeedMenu(false); }} className="block w-full py-2 hover:bg-white/10 text-white text-xs font-bold">
+                                        {s}x
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        <button onClick={() => {
+                             if (!document.fullscreenElement) containerRef.current?.requestFullscreen();
+                             else document.exitFullscreen();
+                        }} className="text-white hover:text-white/80">
+                            <span className="material-symbols-rounded text-3xl">fullscreen</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
       )}
-
-      <style>{`
-          .animate-ping-once { animation: pingOnce 0.6s cubic-bezier(0, 0, 0.2, 1) forwards; }
-          @keyframes pingOnce { 0% { transform: scale(0.8); opacity: 0; } 50% { transform: scale(1.1); opacity: 1; } 100% { transform: scale(1); opacity: 0; } }
-          .animate-ping-fast { animation: pingFast 0.5s cubic-bezier(0, 0, 0.2, 1) infinite; }
-          @keyframes pingFast { 75%, 100% { transform: scale(1.5); opacity: 0; } }
-      `}</style>
     </div>
   );
 };

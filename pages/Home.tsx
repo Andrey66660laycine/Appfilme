@@ -11,19 +11,9 @@ interface HomeProps {
   onPlayVideo: (config: any) => void;
 }
 
-const SAGAS = [
-    { id: 1241, name: 'Harry Potter', image: 'https://image.tmdb.org/t/p/w1280/wfnMt6LGqYHcNyWEqTEpWCn7bOV.jpg' },
-    { id: 10, name: 'Star Wars', image: 'https://image.tmdb.org/t/p/w1280/d8duYyyC9J5T825Hg7grmaabfxQ.jpg' },
-    { id: 86311, name: 'Universo Marvel', image: 'https://image.tmdb.org/t/p/w1280/mdf6322h31db5Z095729c065f50.jpg' },
-    { id: 9485, name: 'Velozes & Furiosos', image: 'https://image.tmdb.org/t/p/w1280/z5A5W3WYJc3UVEWljSGwdjDgQ0j.jpg' },
-    { id: 119, name: 'O Senhor dos Anéis', image: 'https://image.tmdb.org/t/p/w1280/bccR2CGTWVSSZDO7S5cVruhHVk9.jpg' },
-    { id: 131635, name: 'Jogos Vorazes', image: 'https://image.tmdb.org/t/p/w1280/yDbyMx8x356066q316f1562M66q.jpg' }
-];
-
 const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
   const currentProfile = useContext(ProfileContext);
   const [trending, setTrending] = useState<Movie[]>([]);
-  const [horrorMovies, setHorrorMovies] = useState<Movie[]>([]); 
   const [watchHistory, setWatchHistory] = useState<WatchHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [inList, setInList] = useState(false);
@@ -31,19 +21,27 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
   const [showBugModal, setShowBugModal] = useState(false);
   const [bugDescription, setBugDescription] = useState('');
   const [showBanner, setShowBanner] = useState(true);
-  
   const [activeTab, setActiveTab] = useState<'all' | 'movie' | 'tv' | 'originals'>('all');
 
   const refreshHistory = async () => {
       if (!currentProfile) return;
       const history = await storageService.getHistory(currentProfile.id);
-      setWatchHistory(history);
+      
+      // FILTRA ITENS TERMINADOS (>95% visto) para não poluir o "Continue Watching"
+      const continueWatching = history.filter(item => {
+          if (!item.duration || item.duration === 0) return true;
+          const pct = (item.progress / item.duration);
+          return pct < 0.95; 
+      });
+
+      setWatchHistory(continueWatching);
   };
 
   useEffect(() => {
       const onFocus = () => refreshHistory();
       window.addEventListener('focus', onFocus);
-      const interval = setInterval(refreshHistory, 10000);
+      // Atualiza a cada 5s para refletir mudanças do player rapidamente
+      const interval = setInterval(refreshHistory, 5000);
       
       return () => {
           window.removeEventListener('focus', onFocus);
@@ -58,24 +56,12 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
         if (!currentProfile) return;
 
         let results: Movie[] = [];
-
-        if (activeTab === 'all') {
-            results = await tmdb.getTrending('all', currentProfile.is_kid);
-        } else if (activeTab === 'movie') {
-            results = await tmdb.getTrending('movie', currentProfile.is_kid);
-        } else if (activeTab === 'tv') {
-            results = await tmdb.getTrending('tv', currentProfile.is_kid);
-        } else if (activeTab === 'originals') {
-            results = await tmdb.getOriginals();
-        }
+        if (activeTab === 'all') results = await tmdb.getTrending('all', currentProfile.is_kid);
+        else if (activeTab === 'movie') results = await tmdb.getTrending('movie', currentProfile.is_kid);
+        else if (activeTab === 'tv') results = await tmdb.getTrending('tv', currentProfile.is_kid);
+        else if (activeTab === 'originals') results = await tmdb.getOriginals();
 
         setTrending(results);
-        
-        if (!currentProfile.is_kid) {
-            const horror = await tmdb.discoverByGenre(27, 'movie');
-            setHorrorMovies(horror);
-        }
-        
         await refreshHistory();
         
         if (results.length > 0) {
@@ -110,17 +96,7 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
     onMovieClick(item.id, item.media_type === 'tv' || activeTab === 'tv' || activeTab === 'originals' ? 'tv' : 'movie');
   };
 
-  const handleSagaClick = (id: number) => {
-      window.location.hash = `#/collection/${id}`;
-  };
-
-  const handleGenreClick = (id: number, name: string) => {
-      window.location.hash = `#/genre/${id}/${encodeURIComponent(name)}`;
-  };
-
   const handleHistoryClick = async (item: WatchHistoryItem) => {
-    const isTv = item.type === 'tv';
-    
     let playConfig: any = {
         type: item.type,
         tmdbId: Number(item.id),
@@ -129,19 +105,14 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
         initialTime: item.progress || 0 
     };
 
-    if (isTv) {
+    if (item.type === 'tv') {
         playConfig.id = String(item.id);
         onPlayVideo(playConfig);
     } else {
         try {
             const details = await tmdb.getMovieDetails(String(item.id));
-            if (details && details.imdb_id) {
-                playConfig.id = details.imdb_id;
-                onPlayVideo(playConfig);
-            } else {
-                playConfig.id = String(item.id);
-                onPlayVideo(playConfig);
-            }
+            playConfig.id = details?.imdb_id || String(item.id);
+            onPlayVideo(playConfig);
         } catch (e) {
             playConfig.id = String(item.id);
             onPlayVideo(playConfig);
@@ -152,15 +123,12 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
   const handleRemoveFromHistory = async (e: React.MouseEvent, item: WatchHistoryItem) => {
       e.stopPropagation();
       if (!currentProfile) return;
-      const success = await storageService.removeFromHistory(currentProfile.id, item.id, item.type);
-      if (success) {
-          setWatchHistory(prev => prev.filter(i => !(i.id === item.id && i.type === item.type)));
-      }
+      await storageService.removeFromHistory(currentProfile.id, item.id, item.type);
+      setWatchHistory(prev => prev.filter(i => !(i.id === item.id && i.type === item.type)));
   };
 
   const toggleMyList = async () => {
       if (!currentProfile) return;
-      
       const type = featured.media_type === 'tv' || activeTab === 'tv' ? 'tv' : 'movie';
       if (inList) {
           const success = await storageService.removeFromLibrary(currentProfile.id, featured.id, type);
@@ -187,14 +155,8 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
      } else {
          try {
              const details = await tmdb.getMovieDetails(String(featured.id));
-             if (details && details.imdb_id) {
-                 onPlayVideo({ type: 'movie', id: details.imdb_id, tmdbId: featured.id });
-             } else {
-                 console.error("IMDb ID not found");
-             }
-         } catch(e) {
-             console.error("Error fetching movie details", e);
-         }
+             onPlayVideo({ type: 'movie', id: details?.imdb_id || String(featured.id), tmdbId: featured.id });
+         } catch(e) {}
      }
   };
   
@@ -206,13 +168,9 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
       } else {
           try {
               const details = await tmdb.getMovieDetails(String(movie.id));
-              if (details && details.imdb_id) {
-                  onPlayVideo({ type: 'movie', id: details.imdb_id, tmdbId: movie.id });
-              }
-          } catch(e) {
-              console.error("AI Play Error", e);
-          }
-      }
+              onPlayVideo({ type: 'movie', id: details?.imdb_id || String(movie.id), tmdbId: movie.id });
+          } catch(e) {}
+     }
   };
 
   const submitBugReport = () => {
@@ -261,7 +219,6 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
                           <span className="material-symbols-rounded">close</span>
                       </button>
                   </div>
-                  <p className="text-white/60 text-sm mb-4">Encontrou um erro ou algo não funciona? Descreva abaixo:</p>
                   <textarea 
                     value={bugDescription}
                     onChange={(e) => setBugDescription(e.target.value)}
@@ -359,10 +316,9 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
                 </div>
 
                 <div className="flex overflow-x-auto gap-4 pb-8 pr-4 hide-scrollbar snap-x cursor-grab active:cursor-grabbing">
-                    {watchHistory.map((item, idx) => {
+                    {watchHistory.map((item) => {
                         const percent = (item.duration || 0) > 0 ? ((item.progress || 0) / (item.duration || 1)) * 100 : 0;
-                        const isFinished = percent > 90;
-
+                        
                         return (
                           <div key={`${item.id}-${item.timestamp}`} onClick={() => handleHistoryClick(item)} className="flex-none w-[280px] md:w-[320px] snap-start group relative cursor-pointer">
                               
@@ -385,31 +341,23 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
                                       </div>
                                   </div>
                                   
-                                  {/* Bottom Info Gradient */}
-                                  <div className="absolute bottom-0 left-0 w-full h-1/2 bg-gradient-to-t from-black via-black/60 to-transparent"></div>
-
                                   {/* Progress Bar Container */}
-                                  <div className="absolute bottom-0 left-0 w-full h-1.5 bg-white/10 backdrop-blur-sm">
+                                  <div className="absolute bottom-0 left-0 w-full h-1 bg-white/10 backdrop-blur-sm">
                                       <div className="h-full bg-gradient-to-r from-primary to-purple-500 shadow-[0_0_10px_#f20df2]" style={{ width: `${percent}%` }}></div>
                                   </div>
 
                                   {/* Time Remaining Badge */}
-                                  {!isFinished && (
-                                      <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-bold text-white/80 border border-white/10">
-                                          {Math.round(((item.duration || 0) - (item.progress || 0)) / 60)} min rest.
-                                      </div>
-                                  )}
+                                  <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-bold text-white/80 border border-white/10">
+                                      {Math.round(((item.duration || 0) - (item.progress || 0)) / 60)} min rest.
+                                  </div>
                               </div>
 
                               <div className="mt-3 px-1">
                                   <h3 className="text-white text-sm font-bold truncate group-hover:text-primary transition-colors">{item.title}</h3>
-                                  {item.type === 'tv' ? (
+                                  {item.type === 'tv' && (
                                       <div className="flex items-center gap-2 mt-1">
                                           <span className="text-[10px] font-bold text-black bg-white px-1.5 rounded">S{item.season} E{item.episode}</span>
-                                          <span className="text-white/40 text-xs font-medium uppercase tracking-wide">Episódio Atual</span>
                                       </div>
-                                  ) : (
-                                      <p className="text-white/40 text-xs mt-1 font-medium">{isFinished ? 'Assistir Novamente' : 'Continuar Filme'}</p>
                                   )}
                               </div>
                           </div>
@@ -418,8 +366,6 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
                 </div>
             </section>
           )}
-
-          {/* ... (Restante do código: Sagas, Terror, Trending, etc mantidos igual) ... */}
           
           {/* SECTION: Top 10 Trending */}
           <section className="pl-4 lg:pl-16">

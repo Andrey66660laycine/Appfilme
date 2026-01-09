@@ -74,7 +74,10 @@ const App: React.FC = () => {
           if (history.length > 0) {
               const last = history[0];
               // Se tiver progresso e não acabou (entre 5% e 90%)
-              const pct = last.duration > 0 ? (last.progress / last.duration) : 0;
+              const duration = last.duration || 0;
+              const progress = last.progress || 0;
+              const pct = duration > 0 ? (progress / duration) : 0;
+              
               if (pct > 0.05 && pct < 0.90) {
                   setWelcomeBackToast({ visible: true, item: last });
                   setTimeout(() => setWelcomeBackToast(prev => ({ ...prev, visible: false })), 8000);
@@ -514,7 +517,7 @@ const App: React.FC = () => {
               <div className="flex flex-col justify-center">
                   <p className="text-primary text-[10px] font-bold uppercase tracking-widest mb-1">Continuar de onde parou?</p>
                   <p className="text-white font-bold text-sm line-clamp-1">{welcomeBackToast.item.title}</p>
-                  <p className="text-white/50 text-xs">Falta {Math.floor((welcomeBackToast.item.duration - welcomeBackToast.item.progress)/60)} min</p>
+                  <p className="text-white/50 text-xs">Falta {Math.floor(((welcomeBackToast.item.duration || 0) - (welcomeBackToast.item.progress || 0))/60)} min</p>
               </div>
           </div>
       )}

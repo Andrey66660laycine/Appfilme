@@ -68,7 +68,8 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     
     // Configurações críticas para tentar burlar restrições
     video.crossOrigin = "anonymous";
-    // Nota: referrerPolicy é atributo HTML, já definido na tag abaixo.
+    // Definindo referrerPolicy via JS para evitar erro de tipagem no React (TS2322)
+    video.setAttribute('referrerPolicy', 'no-referrer');
 
     const handleLoadedMetadata = () => {
         setDuration(video.duration);
@@ -324,7 +325,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
         onTimeUpdate={handleTimeUpdate}
         playsInline
         crossOrigin="anonymous"
-        referrerPolicy="no-referrer"
       />
 
       {/* --- CENTER PLAY/PAUSE ANIMATION --- */}

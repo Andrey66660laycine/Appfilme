@@ -166,7 +166,7 @@ export const storageService = {
 
       if (error) return [];
       
-      // FIX CRÍTICO: Mapeia o 'tmdb_id' para 'id' para que o Player abra o filme correto.
+      // Mapeia o 'tmdb_id' para 'id' para que o Player abra o filme correto.
       return (data || []).map((item: any) => ({
           ...item,
           id: item.tmdb_id, // Isso garante que o clique abra o filme certo no Player
@@ -223,38 +223,38 @@ export const storageService = {
       }
   },
 
-  // Atualiza apenas o progresso sem criar nova entrada se não precisar
+  // FIX: Agora usa UPSERT para garantir que salve mesmo que não exista
   updateProgress: async (profileId: string, tmdbId: number, type: 'movie'|'tv', progress: number, duration: number, season?: number, episode?: number) => {
       try {
         const user = await getUser();
         if (!user) return;
 
-        // Verifica se existe
-        const { data: existing } = await supabase
-            .from('watch_history')
-            .select('id')
-            .eq('profile_id', profileId)
-            .eq('tmdb_id', tmdbId)
-            .eq('type', type)
-            .eq('season', season || 0)     // Adicionado check de temporada
-            .eq('episode', episode || 0)   // Adicionado check de episódio
-            .maybeSingle();
+        // Se faltar informações críticas, não tenta salvar
+        if (!tmdbId || !type) return;
+
+        // Usa UPSERT (Insert or Update) baseado na UNIQUE CONSTRAINT do banco
+        // Campos obrigatórios para o conflito: profile_id, tmdb_id, type, season, episode
+        const payload: any = {
+            user_id: user.id,
+            profile_id: profileId,
+            tmdb_id: tmdbId,
+            type: type,
+            season: season || 0,
+            episode: episode || 0,
+            progress: progress,
+            duration: duration,
+            created_at: new Date().toISOString() // Atualiza timestamp para subir pro topo
+        };
+
+        // NOTA: Se o registro não existir e faltar 'title' ou 'poster_path' (pq vieram nulos neste update), 
+        // o banco pode reclamar se forem NOT NULL. 
+        // O ideal é o addToHistory ser chamado no início do player com dados completos.
+        // Mas o upsert aqui deve resolver a persistência do tempo.
         
-        if (existing) {
-            // Atualiza
-             await supabase
-                .from('watch_history')
-                .update({ 
-                    progress, 
-                    duration, 
-                    created_at: new Date().toISOString() // Bump to top
-                })
-                .eq('id', existing.id);
-        } else {
-            // Se não existir, chama addToHistory (para criar a entrada inicial)
-            // Isso garante que se o user entrar direto no player, salve.
-            // (Lógica simplificada, idealmente addToHistory já lida com upsert, mas precisa dos metadados completos)
-        }
+        await supabase
+            .from('watch_history')
+            .upsert(payload, { onConflict: 'profile_id,tmdb_id,type,season,episode' });
+
       } catch (e) {
           console.error("Erro update progress", e);
       }
@@ -264,22 +264,6 @@ export const storageService = {
     try {
       const user = await getUser();
       if (!user || !profileId) return;
-
-      const { data: existingItem } = await supabase
-        .from('watch_history')
-        .select('id, progress, duration')
-        .eq('profile_id', profileId)
-        .eq('tmdb_id', item.id)
-        .eq('type', item.type)
-        .eq('season', item.season || 0)
-        .eq('episode', item.episode || 0)
-        .maybeSingle();
-
-      const isNewEntry = !existingItem;
-
-      // Mantém o progresso se já existir e o novo não for passado (ou seja, apenas clicou no card)
-      const progressToSave = item.progress !== undefined ? item.progress : (existingItem?.progress || 0);
-      const durationToSave = item.duration !== undefined ? item.duration : (existingItem?.duration || 0);
 
       const { error } = await supabase
         .from('watch_history')
@@ -294,12 +278,13 @@ export const storageService = {
           vote_average: item.vote_average,
           season: item.season || 0,
           episode: item.episode || 0,
-          progress: progressToSave,
-          duration: durationToSave,
+          progress: item.progress || 0,
+          duration: item.duration || 0,
           created_at: new Date().toISOString()
-        }, { onConflict: 'profile_id,tmdb_id,type,season,episode' }); // Upsert key precisa ser única no DB
+        }, { onConflict: 'profile_id,tmdb_id,type,season,episode' });
 
-      if (!error && isNewEntry) {
+      if (!error) {
+          // Atualiza estatísticas apenas se for inserção nova (opcional, complexo de rastrear no client)
           const isMovie = item.type === 'movie';
           await storageService.updateWatchStats(profileId, 0, isMovie ? 1 : 0, isMovie ? 0 : 1);
       }

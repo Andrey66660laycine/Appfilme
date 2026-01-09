@@ -114,6 +114,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           // BRIDGE: Avisa o Android que o vídeo pegou (Stop Sniffing)
           if (window.Android && window.Android.onVideoPlaying) {
               try {
+                  console.log("Bridge: Sending onVideoPlaying");
                   window.Android.onVideoPlaying(src);
               } catch (e) { console.error("Erro bridge playing", e); }
           }
@@ -188,7 +189,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     };
   }, [src, initialTime, handleVideoError]);
 
-  // --- SAVE PROGRESS ---
+  // --- SAVE PROGRESS (FIX: Use Robust Upsert) ---
   useEffect(() => {
       progressIntervalRef.current = window.setInterval(() => {
           if (videoRef.current && profileId && tmdbId && type) {
@@ -215,31 +216,33 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   }, [profileId, tmdbId, type, season, episode]);
 
   // --- CASTING LOGIC ---
-  const handleNativeCast = () => {
-      const video = videoRef.current;
-      if (!video) return;
+  const handleCastClick = () => {
+      // Prioridade 1: Bridge Nativo do Android (Seu app)
+      if (window.Android && window.Android.castVideo) {
+          try {
+              window.Android.castVideo(src, title || "Video");
+              return;
+          } catch(e) {
+              console.error("Native cast error", e);
+          }
+      }
 
-      // 1. Tenta API Nativa (AirPlay / Google Cast via Browser)
+      // Prioridade 2: API Nativa do Navegador (Chrome/AirPlay)
+      const video = videoRef.current;
       // @ts-ignore
-      if (video.webkitShowPlaybackTargetPicker) {
+      if (video && video.webkitShowPlaybackTargetPicker) {
           // @ts-ignore
           video.webkitShowPlaybackTargetPicker();
-      } else if ((video as any).remote && (video as any).remote.state !== 'disconnected') {
-           // @ts-ignore
-           video.remote.prompt();
-      } else {
-          // Se não suportar nativo, abre o menu de opções
-          setShowCastMenu(true);
+          return;
       }
+      
+      // Se não for possível usar nativo, mostra menu com opção externa
+      setShowCastMenu(true);
   };
 
   const openExternalCastApp = () => {
       // Abre Intent Android para apps como Web Video Caster / LocalCast / VLC
-      // Isso é o que faz funcionar no Roku/FireTV via celular
       const intentUrl = `intent:${src}#Intent;type=video/*;title=${encodeURIComponent(title || 'Video')};end`;
-      
-      // Tenta abrir Web Video Caster especificamente se possível, senão genérico
-      // Fallback para abrir no navegador padrão se falhar
       window.location.href = intentUrl;
       setShowCastMenu(false);
   };
@@ -505,7 +508,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
               <div className="flex items-center gap-4">
                   {/* CAST BUTTON */}
                   <div className="relative">
-                      <button onClick={handleNativeCast} className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center text-white transition-all" title="Transmitir">
+                      <button onClick={handleCastClick} className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center text-white transition-all" title="Transmitir">
                           <span className="material-symbols-rounded text-2xl">cast</span>
                       </button>
                       

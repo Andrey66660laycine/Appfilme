@@ -106,6 +106,8 @@ declare global {
     // Interface para chamar funções do Android (Saída)
     Android?: {
         download: (url: string, title: string) => void;
+        // Método novo para Cast Nativo
+        castVideo: (url: string, title: string) => void;
         // Avisa o app nativo que o link foi pego e o player iniciou (para parar sniffers)
         onVideoPlaying?: (url: string) => void;
         // Avisa o app nativo que o player fechou (para retomar sniffers se necessário)

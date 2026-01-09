@@ -36,6 +36,26 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
   // State for tabs
   const [activeTab, setActiveTab] = useState<'all' | 'movie' | 'tv' | 'originals'>('all');
 
+  // Logic to refresh history when user returns to this screen
+  const refreshHistory = async () => {
+      if (!currentProfile) return;
+      const history = await storageService.getHistory(currentProfile.id);
+      setWatchHistory(history);
+  };
+
+  useEffect(() => {
+      // Reload history on window focus (e.g. closing player)
+      const onFocus = () => refreshHistory();
+      window.addEventListener('focus', onFocus);
+      // Also reload periodically just in case
+      const interval = setInterval(refreshHistory, 10000);
+      
+      return () => {
+          window.removeEventListener('focus', onFocus);
+          clearInterval(interval);
+      };
+  }, [currentProfile]);
+
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -63,9 +83,7 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
             setHorrorMovies(horror);
         }
         
-        // Fetch history (Profile Scoped)
-        const history = await storageService.getHistory(currentProfile.id);
-        setWatchHistory(history);
+        await refreshHistory();
         
         // Check if featured is in list
         if (results.length > 0) {
@@ -117,7 +135,7 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
         tmdbId: Number(item.id),
         season: item.season || 1,
         episode: item.episode || 1,
-        initialTime: 0 
+        initialTime: item.progress || 0 // Resume feature
     };
 
     if (isTv) {
@@ -397,6 +415,13 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
                                           <span className="material-symbols-rounded text-white text-3xl ml-1">play_arrow</span>
                                       </div>
                                   </div>
+                                  
+                                  {/* PROGRESS BAR OVERLAY */}
+                                  {item.duration > 0 && (
+                                      <div className="absolute bottom-0 left-0 w-full h-1 bg-white/20">
+                                          <div className="h-full bg-primary shadow-[0_0_5px_#f20df2]" style={{ width: `${(item.progress / item.duration) * 100}%` }}></div>
+                                      </div>
+                                  )}
                               </div>
                               <div className="mt-3">
                                   <h3 className="text-white text-sm font-bold truncate group-hover:text-primary transition-colors">{item.title}</h3>

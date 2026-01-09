@@ -99,18 +99,21 @@ export interface Profile {
 }
 
 export interface DownloadItem {
-    id: string;
-    tmdbId: number;
+    id: string;             // ID único (Geralmente o TMDB ID como string)
+    tmdbId?: number;        // Opcional se id já for o tmdbId
     title: string;
-    poster: string;
-    backdrop?: string;
     type: 'movie' | 'tv';
     season?: number;
     episode?: number;
-    progress: number; // 0 a 100
-    status: 'pending' | 'downloading' | 'completed' | 'error';
-    path?: string; // Caminho local do arquivo
-    size?: string; // Ex: "1.2 GB"
+    poster: string;         // URL ou Path do Poster
+    backdrop?: string;      // URL ou Path do Backdrop
+    
+    // Campos controlados pelo Android
+    status: 'pending' | 'downloading' | 'completed' | 'error' | 'paused';
+    progress: number;       // 0 a 100
+    path?: string;          // Caminho absoluto do arquivo local
+    size?: string;          // Ex: "1.2 GB"
+    localFilename?: string; // Nome do arquivo físico
 }
 
 declare global {

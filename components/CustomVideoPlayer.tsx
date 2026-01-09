@@ -60,6 +60,9 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const [doubleTapAnimation, setDoubleTapAnimation] = useState<'left' | 'right' | null>(null);
   const [playAnimation, setPlayAnimation] = useState<'play' | 'pause' | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  
+  // Estado para armazenar metadados adicionais (Poster/Backdrop)
+  const [mediaDetails, setMediaDetails] = useState<any>(null);
 
   const controlsTimeoutRef = useRef<number | null>(null);
   const progressIntervalRef = useRef<number | null>(null);
@@ -75,26 +78,31 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       onClose();
   };
 
-  // --- DYNAMIC THEME BASED ON GENRE ---
+  // --- FETCH DETAILS & DYNAMIC THEME ---
   useEffect(() => {
-      const fetchGenre = async () => {
+      const fetchDetails = async () => {
           if (!tmdbId) return;
           try {
               let details;
               if (type === 'movie') details = await tmdb.getMovieDetails(String(tmdbId));
               else details = await tmdb.getTVDetails(String(tmdbId));
 
-              if (details && details.genres.length > 0) {
-                  const genreId = details.genres[0].id;
-                  const root = document.documentElement;
-                  if (genreId === 27) root.style.setProperty('--primary-color', '#ff0000');
-                  else if (genreId === 878) root.style.setProperty('--primary-color', '#00f2ff');
-                  else if (genreId === 10749) root.style.setProperty('--primary-color', '#ff0080');
-                  else root.style.setProperty('--primary-color', '#f20df2');
+              if (details) {
+                  setMediaDetails(details); // Salva detalhes para o download
+                  
+                  // Aplica tema baseado no gênero
+                  if (details.genres && details.genres.length > 0) {
+                      const genreId = details.genres[0].id;
+                      const root = document.documentElement;
+                      if (genreId === 27) root.style.setProperty('--primary-color', '#ff0000');
+                      else if (genreId === 878) root.style.setProperty('--primary-color', '#00f2ff');
+                      else if (genreId === 10749) root.style.setProperty('--primary-color', '#ff0080');
+                      else root.style.setProperty('--primary-color', '#f20df2');
+                  }
               }
           } catch (e) {}
       };
-      fetchGenre();
+      fetchDetails();
       return () => document.documentElement.style.setProperty('--primary-color', '#f20df2');
   }, [tmdbId, type]);
 
@@ -204,43 +212,40 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       };
   }, [profileId, tmdbId, type, season, episode]);
 
-  // --- DOWNLOAD FIX START ---
+  // --- DOWNLOAD LOGIC (FIXED JSON STRUCTURE) ---
   const handleDownload = () => {
       if (isDownloading) return;
       setIsDownloading(true);
 
-      // Tratamento de Dados (Evita undefined no JSON)
       const safeTmdbId = tmdbId || 0;
       const safeTitle = title || "Sem Título";
-      // Diferenciação explícita
       const safeType = type === 'tv' ? 'tv' : 'movie'; 
-      // Se for filme, season/episode são 0
       const safeSeason = safeType === 'tv' ? (season || 0) : 0;
       const safeEpisode = safeType === 'tv' ? (episode || 0) : 0;
+      
+      // Constrói URLs absolutas para o Android baixar as imagens
+      const posterUrl = mediaDetails?.poster_path ? tmdb.getPosterUrl(mediaDetails.poster_path, 'w500') : '';
+      const backdropUrl = mediaDetails?.backdrop_path ? tmdb.getBackdropUrl(mediaDetails.backdrop_path, 'w780') : '';
 
-      // Objeto Payload Completo
+      // Payload JSON estrito conforme solicitado
       const payload = {
-          id: String(safeTmdbId), // ID como string para consistência
-          tmdbId: safeTmdbId,
+          id: String(safeTmdbId), // ID como string
           title: safeTitle,
           type: safeType,
           season: safeSeason,
           episode: safeEpisode,
-          url: src,
-          timestamp: Date.now()
+          poster: posterUrl,
+          backdrop: backdropUrl
       };
 
       try {
-          // *** AQUI ESTÁ A CORREÇÃO PRINCIPAL: JSON.stringify ***
           const jsonString = JSON.stringify(payload);
-          
           console.log("Iniciando download nativo com payload:", jsonString);
 
           if (window.Android && window.Android.download) {
-              // Envia a URL do vídeo E o JSON stringificado
               window.Android.download(src, jsonString);
               
-              // Sinal de "Voltar" (Fecha o player para o usuário continuar navegando)
+              // Sinal de "Voltar" após 1.5s
               setTimeout(() => {
                   handleClose();
               }, 1500);
@@ -253,7 +258,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           fallbackDownload();
       }
   };
-  // --- DOWNLOAD FIX END ---
 
   const handleCastClick = () => {
       if (window.Android && window.Android.castVideo) {

@@ -417,9 +417,9 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
                                   </div>
                                   
                                   {/* PROGRESS BAR OVERLAY */}
-                                  {item.duration > 0 && (
+                                  {(item.duration || 0) > 0 && (
                                       <div className="absolute bottom-0 left-0 w-full h-1 bg-white/20">
-                                          <div className="h-full bg-primary shadow-[0_0_5px_#f20df2]" style={{ width: `${(item.progress / item.duration) * 100}%` }}></div>
+                                          <div className="h-full bg-primary shadow-[0_0_5px_#f20df2]" style={{ width: `${((item.progress || 0) / (item.duration || 1)) * 100}%` }}></div>
                                       </div>
                                   )}
                               </div>

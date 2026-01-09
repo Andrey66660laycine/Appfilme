@@ -51,6 +51,9 @@ const App: React.FC = () => {
   const [playerState, setPlayerState] = useState<PlayerState | null>(null);
   const [nativeVideoUrl, setNativeVideoUrl] = useState<string | null>(null); // URL recebida do Java
   
+  // ANTI-LOOP: Lista de URLs que já falharam no player nativo
+  const [failedUrls, setFailedUrls] = useState<Set<string>>(new Set());
+  
   const [showPlayerControls, setShowPlayerControls] = useState(true);
   const [isIframeLoaded, setIsIframeLoaded] = useState(false); 
   const [nextEpisode, setNextEpisode] = useState<NextEpisodeInfo | null>(null);
@@ -73,10 +76,15 @@ const App: React.FC = () => {
   useEffect(() => {
     // Define a função global que o Android vai chamar
     window.receberVideo = (url: string) => {
+        // Se a URL já falhou antes, IGNORA para evitar loop infinito
+        if (failedUrls.has(url)) {
+            console.log("🚫 URL ignorada (falhou anteriormente):", url);
+            return;
+        }
+
         console.log("🎬 Link Nativo Recebido:", url);
         if (url && (url.startsWith('http') || url.startsWith('blob'))) {
             setNativeVideoUrl(url);
-            // O Iframe será escondido automaticamente pelo JSX condicional
         }
     };
 
@@ -85,7 +93,7 @@ const App: React.FC = () => {
         // @ts-ignore
         delete window.receberVideo;
     };
-  }, []);
+  }, [failedUrls]); // Re-bind se a lista de falhas mudar
 
   // --- APP DOWNLOAD MODAL CHECK ---
   useEffect(() => {
@@ -288,7 +296,8 @@ const App: React.FC = () => {
   // --- PLAY LOGIC ---
   const startVideoPlayer = async (config: PlayerState) => {
     setIsIframeLoaded(false);
-    setNativeVideoUrl(null); // Reseta URL nativa ao iniciar novo vídeo
+    setNativeVideoUrl(null); // Reseta URL nativa
+    setFailedUrls(new Set()); // Reseta lista de falhas ao iniciar novo vídeo
     setPendingPlayerState(null);
 
     // Loader do Embed (fallback)
@@ -376,11 +385,14 @@ const App: React.FC = () => {
   };
 
   // --- FALLBACK LOGIC ---
-  // Se o player nativo der erro, essa função é chamada.
-  // Ela limpa a URL nativa (removendo o CustomVideoPlayer)
-  // mas mantém o playerState ativo, o que faz o React renderizar o Iframe automaticamente.
   const handleNativePlayerError = () => {
       console.log("⚠️ Player nativo falhou. Alternando para Embed (Fallback).");
+      
+      // Adiciona a URL atual à lista negra para evitar loop
+      if (nativeVideoUrl) {
+          setFailedUrls(prev => new Set(prev).add(nativeVideoUrl));
+      }
+
       setNativeVideoUrl(null);
       setIsIframeLoaded(false); // Reseta o estado do iframe para mostrar o loader novamente
       

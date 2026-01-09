@@ -66,10 +66,14 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
 
     setIsLoading(true);
     
-    // Configurações críticas para tentar burlar restrições
-    video.crossOrigin = "anonymous";
-    // Definindo referrerPolicy via JS para evitar erro de tipagem no React (TS2322)
-    video.setAttribute('referrerPolicy', 'no-referrer');
+    // IMPORTANT: Para MP4s diretos que não enviam headers CORS (ex: cdn.cnvslink.com), 
+    // NÃO podemos usar crossOrigin="anonymous", senão o browser bloqueia (erro 403/cors).
+    // Apenas HLS (.m3u8) precisa obrigatoriamente de CORS.
+    if (src.includes('.m3u8')) {
+        video.crossOrigin = "anonymous";
+    } else {
+        video.removeAttribute('crossOrigin');
+    }
 
     const handleLoadedMetadata = () => {
         setDuration(video.duration);
@@ -132,6 +136,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
             handleVideoError(); // No support -> Fallback
         }
     } else {
+        // Standard MP4
         video.src = src;
     }
 
@@ -321,10 +326,12 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     >
       <video
         ref={videoRef}
+        key={src} // Force re-render on source change to reset attributes
         className="w-full h-full object-contain"
         onTimeUpdate={handleTimeUpdate}
         playsInline
-        crossOrigin="anonymous"
+        // @ts-ignore - Bypass TS check for referrerPolicy
+        referrerPolicy="no-referrer"
       />
 
       {/* --- CENTER PLAY/PAUSE ANIMATION --- */}

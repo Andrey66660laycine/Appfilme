@@ -59,7 +59,8 @@ const App: React.FC = () => {
   const [showAds, setShowAds] = useState(false);
   const [adTimer, setAdTimer] = useState(15);
   
-  const [activeServer, setActiveServer] = useState<'playerflix' | 'superflix'>('playerflix');
+  // MUDANÇA: Padrão agora é 'superflix' (Servidor 2)
+  const [activeServer, setActiveServer] = useState<'playerflix' | 'superflix'>('superflix');
   const [videoFoundOverlay, setVideoFoundOverlay] = useState(false);
 
   const [achievementToast, setAchievementToast] = useState<{ visible: boolean; id: string }>({ visible: false, id: '' });
@@ -89,20 +90,67 @@ const App: React.FC = () => {
       if (currentProfile && !playerState) checkLastWatch();
   }, [currentProfile]);
 
+  // --- HELPER: VERIFICAR DURAÇÃO (ANTI-TRAILER/ADS) ---
+  const validateVideoDuration = (url: string): Promise<boolean> => {
+      return new Promise((resolve) => {
+          // Se for blob ou extensão exótica, aprova direto
+          if (url.startsWith('blob:')) { resolve(true); return; }
+
+          const tempVideo = document.createElement('video');
+          tempVideo.preload = 'metadata';
+          tempVideo.muted = true;
+          
+          const timeout = setTimeout(() => {
+              // Se demorar muito para carregar metadados, assume que é válido (evita bloquear conteúdo real lento)
+              tempVideo.src = "";
+              resolve(true);
+          }, 3000);
+
+          tempVideo.onloadedmetadata = () => {
+              clearTimeout(timeout);
+              const duration = tempVideo.duration;
+              tempVideo.src = ""; // Limpa memória
+              
+              // Se a duração for válida e MENOR que 300 segundos (5 min), rejeita.
+              if (duration && !isNaN(duration) && duration < 300) {
+                  console.warn(`⚠️ Sniffer: Vídeo ignorado (Muito curto: ${duration.toFixed(0)}s) - ${url}`);
+                  resolve(false);
+              } else {
+                  resolve(true);
+              }
+          };
+
+          tempVideo.onerror = () => {
+              clearTimeout(timeout);
+              // Se der erro (ex: CORS), aprovamos para não bloquear falso negativo
+              resolve(true); 
+          };
+
+          tempVideo.src = url;
+      });
+  };
+
   // --- NATIVE BRIDGE ---
   useEffect(() => {
     const VIDEO_PATTERNS = [/\.mp4($|\?)/i, /\.mkv($|\?)/i, /\.avi($|\?)/i, /\.m3u8($|\?)/i, /\.mpd($|\?)/i, /master\.txt/i, /\/hls\//i, /video\/mp4/i];
     const AD_KEYWORDS = ['doubleclick', 'googleads', 'googlesyndication', 'facebook', 'analytics', 'pixel', 'tracker', 'adsystem', 'banner', 'pop', 'juicyads'];
 
-    window.receberVideo = (url: string) => {
+    window.receberVideo = async (url: string) => {
         if (!url) return;
         const lowerUrl = url.toLowerCase();
         if (AD_KEYWORDS.some(keyword => lowerUrl.includes(keyword))) return;
 
-        const isValidVideo = VIDEO_PATTERNS.some(regex => regex.test(url)) || url.startsWith('blob:');
+        const isValidPattern = VIDEO_PATTERNS.some(regex => regex.test(url)) || url.startsWith('blob:');
 
-        if (isValidVideo) {
-            console.log("✅ VÍDEO DETECTADO:", url);
+        if (isValidPattern) {
+            // VERIFICAÇÃO DE DURAÇÃO (NOVO)
+            const isLongEnough = await validateVideoDuration(url);
+            
+            if (!isLongEnough) {
+                return; // Aborta se for curto demais
+            }
+
+            console.log("✅ VÍDEO VÁLIDO DETECTADO:", url);
             setNativeVideoUrl(prev => {
                 if (prev === url) return prev;
                 setVideoFoundOverlay(true);
@@ -112,17 +160,6 @@ const App: React.FC = () => {
                     setTimeout(() => setVideoFoundOverlay(false), 500);
                 }, 1500);
                 return prev;
-            });
-            // Fallback para React State update
-            setNativeVideoUrl(current => {
-                if (current === url) return current;
-                setVideoFoundOverlay(true);
-                setTimeout(() => {
-                    setNativeVideoUrl(url);
-                    setIsIframeLoaded(false);
-                    setTimeout(() => setVideoFoundOverlay(false), 1000);
-                }, 1200);
-                return current;
             });
         }
     };
@@ -274,7 +311,7 @@ const App: React.FC = () => {
     setFailedUrls(new Set()); 
     setIsPlayerStable(false);
     setPendingPlayerState(null);
-    setActiveServer('playerflix');
+    setActiveServer('superflix'); // RESETA SEMPRE PARA O MELHOR (SERVER 2)
 
     if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
     loaderTimeoutRef.current = window.setTimeout(() => { setIsIframeLoaded(true); }, 7000);
@@ -456,7 +493,7 @@ const App: React.FC = () => {
                           <span className="material-symbols-rounded text-primary text-3xl">dns</span>
                       </div>
                       <h2 className="text-xl font-display font-bold text-white mb-2">Dica de Reprodução</h2>
-                      <p className="text-white/70 text-sm leading-relaxed mb-6">Se falhar, troque o servidor.</p>
+                      <p className="text-white/70 text-sm leading-relaxed mb-6">Utilize o Servidor 2 para melhor velocidade. Se falhar, tente o backup.</p>
                       <button onClick={handleConfirmNotice} className="w-full bg-white text-black font-bold py-3.5 rounded-xl hover:bg-gray-200 transition-all mb-4">Entendi, Vamos Assistir</button>
                       <div className="flex items-center justify-center gap-2 cursor-pointer group" onClick={() => setDontShowNoticeAgain(!dontShowNoticeAgain)}>
                           <div className={`w-5 h-5 rounded border border-white/30 flex items-center justify-center transition-colors ${dontShowNoticeAgain ? 'bg-primary border-primary' : 'bg-transparent'}`}>
@@ -509,7 +546,7 @@ const App: React.FC = () => {
             type={playerState.type}
             season={playerState.season}
             episode={playerState.episode}
-            initialTime={playerState.initialTime} // Passando o tempo salvo para o player
+            initialTime={playerState.initialTime} 
             nextEpisode={nextEpisode ? { ...nextEpisode, onPlay: handleNextEpisode } : undefined}
             recommendations={playerRecommendations}
             onPlayRelated={handlePlayRelated}
@@ -530,8 +567,13 @@ const App: React.FC = () => {
                     </div>
                 </div>
                 <div className="pointer-events-auto bg-black/60 backdrop-blur-md border border-white/10 rounded-lg p-1 flex gap-1">
-                    <button onClick={() => { setActiveServer('playerflix'); setIsIframeLoaded(false); }} className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${activeServer === 'playerflix' ? 'bg-primary text-white shadow-lg' : 'text-white/50 hover:bg-white/10 hover:text-white'}`}>Opção 1</button>
-                    <button onClick={() => { setActiveServer('superflix'); setIsIframeLoaded(false); }} className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${activeServer === 'superflix' ? 'bg-primary text-white shadow-lg' : 'text-white/50 hover:bg-white/10 hover:text-white'}`}>Opção 2</button>
+                    <button onClick={() => { setActiveServer('superflix'); setIsIframeLoaded(false); }} className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1 ${activeServer === 'superflix' ? 'bg-green-600 text-white shadow-lg' : 'text-white/50 hover:bg-white/10 hover:text-white'}`}>
+                        {activeServer === 'superflix' && <span className="material-symbols-rounded text-[10px]">star</span>}
+                        Servidor 2
+                    </button>
+                    <button onClick={() => { setActiveServer('playerflix'); setIsIframeLoaded(false); }} className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${activeServer === 'playerflix' ? 'bg-primary text-white shadow-lg' : 'text-white/50 hover:bg-white/10 hover:text-white'}`}>
+                        Servidor 1
+                    </button>
                 </div>
             </div>
 
@@ -544,14 +586,23 @@ const App: React.FC = () => {
                     <div className="flex flex-col items-center gap-2 mt-4">
                         <div className="flex items-center gap-2">
                             <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></span>
-                            <span className="text-xs uppercase tracking-[0.2em] text-primary font-bold">Conectando ao {activeServer === 'playerflix' ? 'Servidor 1' : 'Servidor 2'}</span>
+                            <span className="text-xs uppercase tracking-[0.2em] text-primary font-bold">Conectando ao {activeServer === 'superflix' ? 'Servidor 2 (Rápido)' : 'Servidor 1'}</span>
                         </div>
-                        <p className="text-white/30 text-[10px] uppercase tracking-widest mt-2 animate-pulse">Aguarde o vídeo carregar...</p>
+                        <p className="text-white/50 text-[10px] uppercase tracking-widest mt-2">Dica: Selecione "Server Fast" no player abaixo.</p>
                     </div>
                 </div>
             </div>
             
             <div className="flex-1 w-full h-full relative bg-black">
+                 {/* INSTRUÇÃO PISCANTE */}
+                 {isIframeLoaded && (
+                     <div className="absolute top-20 left-0 w-full flex justify-center z-10 pointer-events-none animate-fade-in" style={{animationDelay: '1s'}}>
+                         <div className="bg-primary/90 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg animate-pulse border border-white/20 backdrop-blur-md text-center max-w-[90%]">
+                             👆 No player abaixo, selecione a opção "Server Fast" para carregar instantaneamente.
+                         </div>
+                     </div>
+                 )}
+
                  <iframe 
                     key={activeServer} 
                     src={getEmbedUrl()} 

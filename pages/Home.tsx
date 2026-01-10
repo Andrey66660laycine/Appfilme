@@ -20,11 +20,12 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
   const [showAIModal, setShowAIModal] = useState(false);
   const [showBanner, setShowBanner] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'movie' | 'tv' | 'originals'>('all');
+  
+  // Novo Estado: Configuração para mostrar conteúdo futuro
+  const [showLatestMovies, setShowLatestMovies] = useState(false);
 
-  // Atualização inteligente do histórico
   const refreshHistory = async () => {
       if (!currentProfile) return;
-      // Usa a nova função que já filtra duplicatas e itens terminados
       const smartHistory = await storageService.getSmartContinueWatching(currentProfile.id);
       setWatchHistory(smartHistory);
   };
@@ -46,9 +47,10 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
         if (!currentProfile) return;
 
         let results: Movie[] = [];
-        if (activeTab === 'all') results = await tmdb.getTrending('all', currentProfile.is_kid);
-        else if (activeTab === 'movie') results = await tmdb.getTrending('movie', currentProfile.is_kid);
-        else if (activeTab === 'tv') results = await tmdb.getTrending('tv', currentProfile.is_kid);
+        // Passa o showLatestMovies para a API
+        if (activeTab === 'all') results = await tmdb.getTrending('all', currentProfile.is_kid, showLatestMovies);
+        else if (activeTab === 'movie') results = await tmdb.getTrending('movie', currentProfile.is_kid, showLatestMovies);
+        else if (activeTab === 'tv') results = await tmdb.getTrending('tv', currentProfile.is_kid, showLatestMovies);
         else if (activeTab === 'originals') results = await tmdb.getOriginals();
 
         setTrending(results);
@@ -64,7 +66,7 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
       } catch (err) { console.error(err); } finally { setLoading(false); }
     };
     fetchData();
-  }, [currentProfile, activeTab]);
+  }, [currentProfile, activeTab, showLatestMovies]); // Recarrega se o toggle mudar
 
   if (loading && !trending.length) return (
       <div className="min-h-screen flex items-center justify-center bg-black">
@@ -181,7 +183,7 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
       
       {showAIModal && <AISuggestionModal onClose={() => setShowAIModal(false)} onPlay={handleAIPlay} history={watchHistory} isKid={currentProfile?.is_kid || false} />}
 
-      {/* FAB AI - Floating Action Button */}
+      {/* FAB AI */}
       <div className="fixed bottom-24 right-4 z-40 lg:bottom-10 lg:right-10 animate-fade-in-up">
           <button onClick={() => setShowAIModal(true)} className="group relative flex items-center justify-center w-14 h-14 bg-white/10 backdrop-blur-xl border border-white/20 text-white rounded-full shadow-[0_0_20px_rgba(0,0,0,0.5)] hover:bg-white hover:text-black hover:scale-110 transition-all duration-300">
               <div className="absolute inset-0 bg-primary/20 rounded-full animate-ping-slow opacity-0 group-hover:opacity-100"></div>
@@ -189,22 +191,31 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
           </button>
       </div>
 
-      {/* HERO SECTION REDESIGNED */}
+      {/* HERO SECTION */}
       <header className="relative w-full h-[85vh] min-h-[600px] overflow-hidden group">
           
-          {/* Background Image with Parallax & Zoom */}
+          {/* Config Toggle (Top Right) */}
+          <div className="absolute top-24 right-6 z-50 animate-fade-in">
+              <button 
+                  onClick={() => setShowLatestMovies(!showLatestMovies)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full border backdrop-blur-md transition-all ${showLatestMovies ? 'bg-primary/20 border-primary text-primary shadow-[0_0_15px_#f20df2]' : 'bg-black/30 border-white/10 text-white/50 hover:bg-white/10'}`}
+              >
+                  <span className="material-symbols-rounded text-sm">{showLatestMovies ? 'rocket_launch' : 'science'}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider">{showLatestMovies ? 'Recentes (Beta)' : 'Estável'}</span>
+              </button>
+              {showLatestMovies && (
+                  <div className="absolute right-0 top-full mt-2 w-48 bg-black/80 backdrop-blur-md p-2 rounded-lg border border-white/10 text-[10px] text-white/60 text-right">
+                      Alguns filmes de 2026+ podem não ter links disponíveis.
+                  </div>
+              )}
+          </div>
+
           <div className="absolute inset-0 bg-cover bg-center animate-zoom-slow" style={{backgroundImage: `url(${tmdb.getBackdropUrl(featured.backdrop_path, 'original')})`}}></div>
-          
-          {/* Premium Gradient Overlays */}
           <div className="absolute inset-0 bg-gradient-to-t from-[#000000] via-[#000000]/40 to-transparent"></div>
           <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/40 to-transparent"></div>
-          
-          {/* Subtle Aurora Effect at bottom */}
           <div className="absolute bottom-0 left-0 w-full h-1/2 bg-gradient-to-t from-primary/10 to-transparent opacity-50 mix-blend-screen pointer-events-none"></div>
 
           <div className="absolute bottom-0 left-0 w-full p-6 pb-12 lg:pb-24 flex flex-col items-start lg:pl-16 z-10 max-w-7xl mx-auto opacity-0 animate-slide-up">
-              
-              {/* Metadata Badges */}
               <div className="mb-6 flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-1 bg-white/10 backdrop-blur-md px-2 py-1 rounded-md border border-white/10">
                        <span className="material-symbols-rounded text-yellow-400 text-sm fill-1">star</span>
@@ -215,17 +226,14 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
                   <span className="bg-primary/20 text-primary text-[10px] font-bold px-2 py-0.5 rounded border border-primary/20 uppercase tracking-widest shadow-[0_0_10px_rgba(242,13,242,0.2)]">Top 1</span>
               </div>
 
-              {/* Title */}
               <h1 className="text-5xl md:text-7xl lg:text-8xl font-display font-black text-white mb-6 tracking-tighter drop-shadow-2xl leading-[0.9] max-w-4xl">
                   {getTitle(featured)}
               </h1>
 
-              {/* Overview */}
               <p className="text-white/70 text-sm md:text-base leading-relaxed line-clamp-3 max-w-lg mb-10 font-light border-l-2 border-primary/50 pl-4">
                   {featured.overview}
               </p>
 
-              {/* Action Buttons */}
               <div className="flex items-center flex-wrap gap-4 w-full md:w-auto">
                   <button onClick={handleFeaturedPlay} className="relative overflow-hidden group flex items-center justify-center gap-3 bg-white text-black px-8 py-4 rounded-xl font-bold text-lg hover:scale-105 transition-all duration-300 w-full md:w-auto min-w-[200px] shadow-[0_0_30px_rgba(255,255,255,0.2)]">
                       <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
@@ -261,35 +269,26 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
                         return (
                           <div key={`${item.id}-${item.timestamp}`} onClick={() => handleHistoryClick(item)} className="flex-none w-[280px] md:w-[320px] snap-start group relative cursor-pointer">
                               
-                              {/* Remove Button */}
                               <button onClick={(e) => handleRemoveFromHistory(e, item)} className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-surface border border-white/10 text-white/50 hover:text-white hover:bg-red-500 hover:border-red-500 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 z-30 shadow-lg scale-90 group-hover:scale-100">
                                 <span className="material-symbols-rounded text-lg">close</span>
                               </button>
 
-                              {/* Card Container */}
                               <div className="relative aspect-video rounded-xl overflow-hidden bg-surface shadow-2xl ring-1 ring-white/5 group-hover:ring-primary/50 transition-all duration-300">
                                   <img src={tmdb.getBackdropUrl(item.backdrop_path, 'w780')} alt={item.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 opacity-60 group-hover:opacity-100" />
-                                  
-                                  {/* Play Icon Overlay */}
                                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                                       <div className="w-14 h-14 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border border-white/40 shadow-lg group-active:scale-95 transition-transform">
                                           <span className="material-symbols-rounded text-white text-4xl ml-1 fill-1">play_arrow</span>
                                       </div>
                                   </div>
-                                  
-                                  {/* Progress Bar Container */}
                                   <div className="absolute bottom-0 left-0 w-full h-1 bg-white/10">
                                       <div className="h-full bg-gradient-to-r from-primary to-purple-400 shadow-[0_0_15px_#f20df2]" style={{ width: `${percent}%` }}></div>
                                   </div>
-
-                                  {/* Smart Info Badge */}
                                   <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md px-2 py-1 rounded-md border border-white/5 flex items-center gap-2">
                                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
                                        <span className="text-[10px] font-bold text-white uppercase tracking-wider">{item.type === 'tv' ? `S${item.season} E${item.episode}` : 'Filme'}</span>
                                   </div>
                               </div>
 
-                              {/* Meta Info */}
                               <div className="mt-3 px-1 flex justify-between items-start">
                                   <div className="max-w-[80%]">
                                       <h3 className="text-white text-sm font-bold truncate group-hover:text-primary transition-colors">{item.title}</h3>
@@ -315,12 +314,9 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
               <div className="flex overflow-x-auto gap-4 pb-8 pr-4 hide-scrollbar snap-x items-center">
                   {top10.map((item, index) => (
                     <div key={item.id} onClick={() => handleClick(item)} className="flex-none flex items-center snap-start relative w-[200px] group cursor-pointer hover:-translate-y-2 transition-transform duration-300">
-                        {/* Styled Number */}
                         <div className="font-display font-black text-[140px] leading-none text-transparent text-stroke z-0 translate-y-4 -mr-8 select-none opacity-50 group-hover:opacity-100 transition-opacity">
                             {index + 1}
                         </div>
-                        
-                        {/* Poster */}
                         <div className="relative w-[140px] aspect-[2/3] rounded-lg overflow-hidden shadow-2xl z-10 ring-1 ring-white/10 group-hover:ring-white/30 transition-all">
                             <img src={tmdb.getPosterUrl(item.poster_path)} className="w-full h-full object-cover" alt={getTitle(item)} />
                         </div>
@@ -349,7 +345,6 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
                     >
                         <img src={tmdb.getPosterUrl(item.poster_path)} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-80 group-hover:opacity-100" alt={getTitle(item)} loading="lazy" />
                         
-                        {/* Hover Overlay */}
                         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
                             <p className="text-white text-sm font-bold leading-tight mb-1">{getTitle(item)}</p>
                             <div className="flex items-center justify-between">

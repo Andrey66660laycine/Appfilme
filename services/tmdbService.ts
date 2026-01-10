@@ -6,8 +6,22 @@ const BASE_URL = 'https://api.themoviedb.org/3';
 const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
 const LANG = 'pt-BR';
 
+// Data Limite para exibição segura (31 de Dezembro de 2025)
+const MAX_SAFE_DATE = new Date('2025-12-31');
+
+const filterFutureContent = (list: Movie[], forceShowUpcoming: boolean = false): Movie[] => {
+    if (forceShowUpcoming) return list;
+    
+    return list.filter(item => {
+        const dateStr = item.release_date || (item as any).first_air_date;
+        if (!dateStr) return true; // Se não tem data, mostra (geralmente catalogo antigo)
+        const date = new Date(dateStr);
+        return date <= MAX_SAFE_DATE;
+    });
+};
+
 export const tmdb = {
-  getTrending: async (type: 'all' | 'movie' | 'tv' = 'all', isKid: boolean = false): Promise<Movie[]> => {
+  getTrending: async (type: 'all' | 'movie' | 'tv' = 'all', isKid: boolean = false, showUpcoming: boolean = false): Promise<Movie[]> => {
     try {
       let url = `${BASE_URL}/trending/${type}/week?api_key=${API_KEY}&language=${LANG}`;
       
@@ -18,7 +32,7 @@ export const tmdb = {
 
       const res = await fetch(url);
       const data = await res.json();
-      return data.results || [];
+      return filterFutureContent(data.results || [], showUpcoming);
     } catch (error) {
       console.error("Failed to fetch trending:", error);
       return [];
@@ -30,7 +44,7 @@ export const tmdb = {
           const url = `${BASE_URL}/discover/tv?api_key=${API_KEY}&language=${LANG}&sort_by=vote_average.desc&vote_count.gte=1000&include_adult=false&with_networks=213`; 
           const res = await fetch(url);
           const data = await res.json();
-          return data.results || [];
+          return filterFutureContent(data.results || []);
       } catch (e) {
           return [];
       }
@@ -40,7 +54,7 @@ export const tmdb = {
     try {
       const res = await fetch(`${BASE_URL}/search/multi?api_key=${API_KEY}&query=${encodeURIComponent(query)}&language=${LANG}&include_adult=false`);
       const data = await res.json();
-      return data.results || [];
+      return filterFutureContent(data.results || []);
     } catch (error) {
       console.error("Failed to search:", error);
       return [];
@@ -51,7 +65,8 @@ export const tmdb = {
     try {
         const res = await fetch(`${BASE_URL}/discover/${type}?api_key=${API_KEY}&language=${LANG}&with_genres=${genreId}&sort_by=popularity.desc&include_adult=false&page=${page}`);
         const data = await res.json();
-        return (data.results || []).map((item: any) => ({ ...item, media_type: type }));
+        const results = (data.results || []).map((item: any) => ({ ...item, media_type: type }));
+        return filterFutureContent(results);
     } catch (error) {
         console.error("Failed to discover by genre:", error);
         return [];
@@ -76,7 +91,13 @@ export const tmdb = {
           // 3. Aplica filtros rigorosos: Pós-2010, Populares e com Imagem
           const filtered = results.filter((item: any) => {
               const releaseDate = item.release_date || item.first_air_date;
-              const year = releaseDate ? parseInt(releaseDate.split('-')[0]) : 0;
+              if (!releaseDate) return false;
+              const dateObj = new Date(releaseDate);
+              const year = parseInt(releaseDate.split('-')[0]) : 0;
+              
+              // Verifica se está no futuro distante (acima de 2025)
+              if (dateObj > MAX_SAFE_DATE) return false;
+
               return (
                   year >= 2010 && // Apenas filmes recentes
                   item.vote_average >= 5.0 && // Nota mínima

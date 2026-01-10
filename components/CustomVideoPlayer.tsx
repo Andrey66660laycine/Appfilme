@@ -57,6 +57,28 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const controlsTimeoutRef = useRef<number | null>(null);
   const touchStartRef = useRef<{ x: number, y: number } | null>(null);
 
+  // --- NATIVE BRIDGE LIFECYCLE ---
+  useEffect(() => {
+      // 1. Ao entrar no player: Forçar Landscape e Parar Sniffer
+      if (window.Android) {
+          try {
+              if (window.Android.setOrientation) window.Android.setOrientation('landscape');
+              if (window.Android.stopSniffer) window.Android.stopSniffer(); // "Já peguei o link"
+          } catch(e) { console.error("Erro na bridge nativa (mount):", e); }
+      }
+
+      return () => {
+          // 2. Ao sair do player: Voltar para Portrait (ou Auto) e Retomar Sniffer
+          if (window.Android) {
+              try {
+                  if (window.Android.setOrientation) window.Android.setOrientation('portrait');
+                  if (window.Android.startSniffer) window.Android.startSniffer(); // "Pode voltar a capturar"
+                  if (window.Android.onPlayerClosed) window.Android.onPlayerClosed();
+              } catch(e) { console.error("Erro na bridge nativa (unmount):", e); }
+          }
+      };
+  }, []);
+
   // --- LOGIC ---
   const handleDownload = () => {
     if (isDownloading) return;
@@ -71,12 +93,32 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     
     if (window.Android?.download) {
         window.Android.download(src, meta);
-        setTimeout(() => { onClose(); if(window.Android?.onPlayerClosed) window.Android.onPlayerClosed(); }, 1000);
+        setTimeout(() => { onClose(); }, 1000);
     } else {
+        // Fallback for web
         const a = document.createElement('a'); a.href = src; a.download = title || 'video.mp4';
         a.target = '_blank'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
         setIsDownloading(false);
     }
+  };
+
+  const handleCast = () => {
+      if (window.Android?.castVideo) {
+          window.Android.castVideo(src, title);
+      } else {
+          // Fallback Web (Chrome Cast API placeholder - usually requires sender SDK)
+          alert("Transmitir para TV (Disponível no App Nativo)");
+      }
+  };
+
+  const toggleFullscreen = () => {
+      if (!document.fullscreenElement) {
+          containerRef.current?.requestFullscreen().catch(err => console.log(err));
+          if (window.Android?.setOrientation) window.Android.setOrientation('landscape');
+      } else {
+          document.exitFullscreen();
+          // Dont force portrait here, let the exit handle it or sensor
+      }
   };
 
   useEffect(() => {
@@ -253,21 +295,24 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     >
         <video ref={videoRef} className={`w-full h-full object-${fitMode} transition-all duration-300`} playsInline />
 
-        {/* LOADING */}
+        {/* LOADING STATE REFINED */}
         {isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 bg-black/20 backdrop-blur-sm">
-                 <div className="w-16 h-16 border-4 border-white/20 border-t-primary rounded-full animate-spin shadow-lg"></div>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 bg-black/40 backdrop-blur-sm animate-fade-in">
+                 <div className="flex flex-col items-center gap-4">
+                     <div className="w-16 h-16 border-4 border-white/10 border-t-primary rounded-full animate-spin shadow-[0_0_30px_rgba(242,13,242,0.4)]"></div>
+                     <p className="text-white/60 text-xs font-bold tracking-[0.2em] animate-pulse">CARREGANDO BUFFER</p>
+                 </div>
             </div>
         )}
 
         {/* GESTURE INDICATOR (IOS STYLE) */}
         {gestureIndicator && (
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/10 backdrop-blur-xl rounded-2xl p-6 flex flex-col items-center gap-4 animate-fade-in z-50 border border-white/20 shadow-2xl">
-                <span className="material-symbols-rounded text-4xl text-white drop-shadow-md">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/60 backdrop-blur-xl rounded-3xl p-8 flex flex-col items-center gap-6 animate-fade-in z-50 border border-white/10 shadow-2xl">
+                <span className="material-symbols-rounded text-5xl text-white drop-shadow-md">
                     {gestureIndicator.type === 'volume' ? 'volume_up' : 'brightness_6'}
                 </span>
-                <div className="w-2 h-32 bg-white/20 rounded-full overflow-hidden relative">
-                    <div className="absolute bottom-0 w-full bg-white transition-all duration-75" style={{ height: `${(gestureIndicator.type === 'brightness' ? (gestureIndicator.value - 0.2)/(1.3) : gestureIndicator.value) * 100}%` }}></div>
+                <div className="w-1.5 h-32 bg-white/20 rounded-full overflow-hidden relative">
+                    <div className="absolute bottom-0 w-full bg-white transition-all duration-75 shadow-[0_0_10px_white]" style={{ height: `${(gestureIndicator.type === 'brightness' ? (gestureIndicator.value - 0.2)/(1.3) : gestureIndicator.value) * 100}%` }}></div>
                 </div>
             </div>
         )}
@@ -276,33 +321,38 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
         {showSkipIntro && !isLocked && (
             <button 
                 onClick={(e) => { e.stopPropagation(); seek(85); }}
-                className="absolute bottom-24 right-6 z-50 bg-white text-black px-6 py-2.5 rounded-full font-bold text-sm flex items-center gap-2 shadow-xl hover:scale-105 active:scale-95 transition-all animate-slide-up"
+                className="absolute bottom-32 right-6 z-50 bg-white text-black px-6 py-3 rounded-xl font-bold text-sm flex items-center gap-2 shadow-xl hover:scale-105 active:scale-95 transition-all animate-slide-up group"
             >
+                <div className="w-0 group-hover:w-4 transition-all overflow-hidden flex items-center"><span className="material-symbols-rounded text-lg">fast_forward</span></div>
                 Pular Abertura
-                <span className="material-symbols-rounded text-lg">skip_next</span>
             </button>
         )}
 
         {/* CONTROLS UI */}
         {!isLocked && (
-            <div className={`absolute inset-0 z-40 flex flex-col justify-between transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+            <div className={`absolute inset-0 z-40 flex flex-col justify-between transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                 
                 {/* HEADER */}
-                <div className="p-4 pt-6 bg-gradient-to-b from-black/90 to-transparent flex justify-between items-start">
+                <div className="p-6 bg-gradient-to-b from-black/90 via-black/40 to-transparent flex justify-between items-start">
                     <div className="flex items-center gap-4">
-                        <button onClick={onClose} className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors backdrop-blur-md">
-                            <span className="material-symbols-rounded text-white">arrow_back</span>
+                        <button onClick={onClose} className="w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 flex items-center justify-center transition-all backdrop-blur-md group">
+                            <span className="material-symbols-rounded text-white group-hover:-translate-x-1 transition-transform">arrow_back</span>
                         </button>
                         <div>
-                            <h2 className="text-sm font-bold text-white drop-shadow-md">{title}</h2>
-                            {type === 'tv' && <p className="text-xs text-white/70 font-medium">S{season} E{episode}</p>}
+                            <h2 className="text-base font-bold text-white drop-shadow-md line-clamp-1">{title}</h2>
+                            {type === 'tv' && <p className="text-xs text-white/70 font-medium tracking-wide">TEMPORADA {season} • EPISÓDIO {episode}</p>}
                         </div>
                     </div>
+                    
                     <div className="flex gap-3">
-                        <button onClick={() => setShowSidePanel(true)} className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors backdrop-blur-md">
-                             <span className="material-symbols-rounded">playlist_play</span>
+                        <button onClick={handleCast} className="w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 flex items-center justify-center transition-all backdrop-blur-md">
+                             <span className="material-symbols-rounded">cast</span>
                         </button>
-                        <button onClick={() => setIsLocked(true)} className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors backdrop-blur-md">
+                        <button onClick={() => setShowSidePanel(true)} className="w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 flex items-center justify-center transition-all backdrop-blur-md relative">
+                             <span className="material-symbols-rounded">playlist_play</span>
+                             <div className="absolute top-3 right-3 w-2 h-2 bg-primary rounded-full animate-pulse"></div>
+                        </button>
+                        <button onClick={() => setIsLocked(true)} className="w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 flex items-center justify-center transition-all backdrop-blur-md">
                              <span className="material-symbols-rounded">lock_open</span>
                         </button>
                     </div>
@@ -310,24 +360,30 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
 
                 {/* CENTER PLAY */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                     <div className="flex items-center gap-12 pointer-events-auto">
-                        <button onClick={() => seek(-10)} className="p-4 rounded-full hover:bg-white/10 text-white/80 hover:text-white transition-colors">
-                            <span className="material-symbols-rounded text-5xl">replay_10</span>
+                     <div className="flex items-center gap-16 pointer-events-auto">
+                        <button onClick={() => seek(-10)} className="p-6 rounded-full hover:bg-white/5 text-white/50 hover:text-white transition-all transform hover:scale-110">
+                            <span className="material-symbols-rounded text-6xl">replay_10</span>
                         </button>
-                        <button onClick={() => playing ? videoRef.current?.pause() : videoRef.current?.play()} className="w-20 h-20 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center hover:scale-110 hover:bg-primary transition-all shadow-2xl">
-                            <span className="material-symbols-rounded text-6xl fill-1 ml-1">{playing ? 'pause' : 'play_arrow'}</span>
+                        
+                        <button onClick={() => playing ? videoRef.current?.pause() : videoRef.current?.play()} className="w-24 h-24 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center hover:scale-110 hover:bg-primary hover:border-primary transition-all shadow-[0_0_40px_rgba(0,0,0,0.5)] group">
+                            <span className="material-symbols-rounded text-7xl fill-1 ml-1 text-white group-hover:text-black transition-colors">{playing ? 'pause' : 'play_arrow'}</span>
                         </button>
-                        <button onClick={() => seek(10)} className="p-4 rounded-full hover:bg-white/10 text-white/80 hover:text-white transition-colors">
-                            <span className="material-symbols-rounded text-5xl">forward_10</span>
+                        
+                        <button onClick={() => seek(10)} className="p-6 rounded-full hover:bg-white/5 text-white/50 hover:text-white transition-all transform hover:scale-110">
+                            <span className="material-symbols-rounded text-6xl">forward_10</span>
                         </button>
                      </div>
                 </div>
 
-                {/* BOTTOM FLOATING BAR */}
-                <div className="p-4 md:p-8 bg-gradient-to-t from-black/90 to-transparent">
-                     <div className="bg-[#1a1a1a]/80 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-2xl max-w-4xl mx-auto w-full">
+                {/* BOTTOM FLOATING BAR (Refined Design) */}
+                <div className="p-4 md:p-8 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
+                     <div className="bg-[#0f0f0f]/80 backdrop-blur-2xl border border-white/10 rounded-3xl p-5 shadow-2xl max-w-5xl mx-auto w-full relative overflow-hidden">
+                         
+                         {/* Shine Effect */}
+                         <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+
                          {/* TIME SLIDER */}
-                         <div className="flex items-center gap-4 mb-2 text-xs font-bold text-white/70 font-mono">
+                         <div className="flex items-center gap-4 mb-4 text-xs font-bold text-white/70 font-mono">
                              <span>{formatTime(currentTime)}</span>
                              <div className="relative flex-1 h-1.5 group cursor-pointer">
                                  <input 
@@ -336,9 +392,12 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                                     onChange={(e) => { if(videoRef.current) videoRef.current.currentTime = Number(e.target.value); setCurrentTime(Number(e.target.value)); }} 
                                     className="absolute inset-0 w-full h-full opacity-0 z-20 cursor-pointer" 
                                  />
-                                 <div className="w-full h-full bg-white/20 rounded-full overflow-hidden">
-                                     <div className="h-full bg-primary relative transition-all" style={{ width: `${(currentTime / duration) * 100}%` }}>
-                                         <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg scale-0 group-hover:scale-100 transition-transform"></div>
+                                 <div className="w-full h-full bg-white/10 rounded-full overflow-hidden">
+                                     {/* Buffer Bar (Simulated) */}
+                                     <div className="h-full bg-white/10 w-[60%] absolute top-0 left-0"></div>
+                                     
+                                     <div className="h-full bg-gradient-to-r from-primary to-purple-500 relative transition-all shadow-[0_0_15px_#f20df2]" style={{ width: `${(currentTime / duration) * 100}%` }}>
+                                         <div className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg scale-0 group-hover:scale-100 transition-transform border-2 border-primary"></div>
                                      </div>
                                  </div>
                              </div>
@@ -346,31 +405,34 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                          </div>
 
                          {/* ACTIONS ROW */}
-                         <div className="flex justify-between items-center mt-2">
-                             <div className="flex gap-4">
-                                 <button onClick={() => setFitMode(f => f === 'contain' ? 'cover' : 'contain')} className="text-xs font-bold flex items-center gap-1 hover:text-primary transition-colors">
+                         <div className="flex justify-between items-center">
+                             <div className="flex gap-2">
+                                 <button onClick={() => setFitMode(f => f === 'contain' ? 'cover' : 'contain')} className="h-10 px-4 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 text-xs font-bold flex items-center gap-2 hover:text-white transition-colors">
                                      <span className="material-symbols-rounded text-lg">{fitMode === 'contain' ? 'fit_screen' : 'crop_free'}</span> Aspecto
                                  </button>
-                                 <button onClick={() => setShowSpeedMenu(!showSpeedMenu)} className="text-xs font-bold flex items-center gap-1 hover:text-primary transition-colors relative">
-                                     {playbackSpeed}x Velocidade
+                                 <button onClick={() => setShowSpeedMenu(!showSpeedMenu)} className="h-10 px-4 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 text-xs font-bold flex items-center gap-2 hover:text-white transition-colors relative">
+                                     <span className="material-symbols-rounded text-lg">slow_motion_video</span> {playbackSpeed}x
                                      {showSpeedMenu && (
-                                         <div className="absolute bottom-full left-0 mb-2 bg-black/90 border border-white/10 rounded-lg p-1">
+                                         <div className="absolute bottom-full left-0 mb-3 bg-[#1a1a1a] border border-white/10 rounded-xl p-1 shadow-xl flex flex-col gap-1 w-24 overflow-hidden">
                                              {[0.5, 1.0, 1.25, 1.5, 2.0].map(s => (
-                                                 <div key={s} onClick={() => { if(videoRef.current) videoRef.current.playbackRate = s; setPlaybackSpeed(s); }} className="px-3 py-1 hover:bg-white/20 rounded text-center">{s}x</div>
+                                                 <div key={s} onClick={() => { if(videoRef.current) videoRef.current.playbackRate = s; setPlaybackSpeed(s); }} className={`px-3 py-2 hover:bg-white/10 rounded-lg text-center text-xs font-bold ${playbackSpeed === s ? 'text-primary bg-white/5' : 'text-white'}`}>{s}x</div>
                                              ))}
                                          </div>
                                      )}
                                  </button>
                              </div>
                              
-                             <div className="flex gap-4">
+                             <div className="flex gap-3">
                                   {nextEpisode && (duration - currentTime < 180) && (
-                                      <button onClick={nextEpisode.onPlay} className="flex items-center gap-2 bg-white text-black px-3 py-1.5 rounded-full text-xs font-bold hover:scale-105 transition-transform animate-pulse">
+                                      <button onClick={nextEpisode.onPlay} className="flex items-center gap-2 bg-white text-black px-4 py-2 rounded-full text-xs font-bold hover:scale-105 transition-transform animate-pulse shadow-lg">
                                           Próximo Ep <span className="material-symbols-rounded text-base">skip_next</span>
                                       </button>
                                   )}
-                                  <button onClick={handleDownload} className={`hover:text-primary transition-colors ${isDownloading ? 'text-primary animate-pulse' : ''}`}>
+                                  <button onClick={handleDownload} className={`w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors ${isDownloading ? 'text-primary animate-pulse' : 'text-white/70 hover:text-white'}`}>
                                       <span className="material-symbols-rounded">download</span>
+                                  </button>
+                                  <button onClick={toggleFullscreen} className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors text-white/70 hover:text-white">
+                                      <span className="material-symbols-rounded">fullscreen</span>
                                   </button>
                              </div>
                          </div>
@@ -381,32 +443,41 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
 
         {/* LOCKED OVERLAY */}
         {isLocked && (
-             <button onClick={() => setIsLocked(false)} className="absolute top-12 left-1/2 -translate-x-1/2 bg-white/10 backdrop-blur-md border border-white/20 px-6 py-2.5 rounded-full flex items-center gap-2 z-50 animate-pulse pointer-events-auto shadow-lg">
+             <button onClick={() => setIsLocked(false)} className="absolute top-12 left-1/2 -translate-x-1/2 bg-white/10 backdrop-blur-md border border-white/20 px-8 py-3 rounded-full flex items-center gap-3 z-50 animate-pulse pointer-events-auto shadow-2xl hover:bg-white/20 transition-colors">
                  <span className="material-symbols-rounded text-white fill-1">lock</span>
-                 <span className="text-white text-xs font-bold uppercase tracking-wider">Desbloquear</span>
+                 <span className="text-white text-xs font-bold uppercase tracking-wider">Toque para Desbloquear</span>
              </button>
         )}
         
         {/* SIDE PANEL (Episodes) */}
-        <div className={`absolute top-0 right-0 h-full w-80 bg-[#121212]/95 backdrop-blur-2xl border-l border-white/10 z-[60] transform transition-transform duration-300 ${showSidePanel ? 'translate-x-0' : 'translate-x-full'} flex flex-col`}>
-             <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/40">
-                 <h3 className="font-bold">Episódios</h3>
-                 <button onClick={() => setShowSidePanel(false)}><span className="material-symbols-rounded">close</span></button>
+        <div className={`absolute top-0 right-0 h-full w-96 bg-[#0f0f0f]/95 backdrop-blur-2xl border-l border-white/10 z-[60] transform transition-transform duration-500 cubic-bezier(0.32, 0.72, 0, 1) ${showSidePanel ? 'translate-x-0' : 'translate-x-full'} flex flex-col shadow-2xl`}>
+             <div className="p-6 border-b border-white/10 flex justify-between items-center bg-black/20">
+                 <h3 className="font-display font-bold text-lg text-white">Episódios</h3>
+                 <button onClick={() => setShowSidePanel(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10"><span className="material-symbols-rounded">close</span></button>
              </div>
-             <div className="flex-1 overflow-y-auto p-2 space-y-2">
+             <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
                  {type === 'tv' ? seasonEpisodes.map(ep => (
-                     <div key={ep.id} onClick={() => { if(onPlayRelated) onPlayRelated({ id: Number(tmdbId), media_type:'tv', title:'', episode_number: ep.episode_number } as any); setShowSidePanel(false); }} className={`p-2 flex gap-3 rounded-lg hover:bg-white/5 cursor-pointer ${ep.episode_number === episode ? 'bg-primary/20 border border-primary/30' : ''}`}>
-                         <div className="w-24 aspect-video bg-black rounded overflow-hidden relative">
+                     <div key={ep.id} onClick={() => { if(onPlayRelated) onPlayRelated({ id: Number(tmdbId), media_type:'tv', title:'', episode_number: ep.episode_number } as any); setShowSidePanel(false); }} className={`p-3 flex gap-4 rounded-xl hover:bg-white/5 cursor-pointer transition-all border ${ep.episode_number === episode ? 'bg-primary/10 border-primary/50' : 'border-transparent hover:border-white/10'}`}>
+                         <div className="w-32 aspect-video bg-black rounded-lg overflow-hidden relative shadow-lg">
                              {ep.still_path ? <img src={tmdb.getBackdropUrl(ep.still_path, 'w300')} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-white/5"></div>}
-                             {ep.episode_number === episode && <div className="absolute inset-0 flex items-center justify-center bg-black/40"><span className="material-symbols-rounded text-primary animate-bounce">equalizer</span></div>}
+                             {ep.episode_number === episode && (
+                                 <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-[1px]">
+                                     <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center shadow-lg animate-bounce">
+                                         <span className="material-symbols-rounded text-white text-sm fill-1">play_arrow</span>
+                                     </div>
+                                 </div>
+                             )}
                          </div>
-                         <div className="flex-1 min-w-0 flex flex-col justify-center">
-                             <p className={`text-sm font-bold truncate ${ep.episode_number === episode ? 'text-primary' : 'text-white'}`}>{ep.episode_number}. {ep.name}</p>
-                             <p className="text-xs text-white/40">{ep.runtime || 24} min</p>
+                         <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
+                             <p className={`text-sm font-bold truncate leading-tight ${ep.episode_number === episode ? 'text-primary' : 'text-white'}`}>{ep.episode_number}. {ep.name}</p>
+                             <p className="text-[10px] text-white/40 font-medium uppercase tracking-wide">{ep.runtime || 24} MIN</p>
                          </div>
                      </div>
                  )) : (
-                     <div className="p-4 text-center text-white/30 text-sm">Lista de episódios apenas para séries.</div>
+                     <div className="p-8 text-center text-white/30 text-sm flex flex-col items-center gap-4">
+                         <span className="material-symbols-rounded text-4xl">movie</span>
+                         Lista de episódios disponível apenas para séries.
+                     </div>
                  )}
              </div>
         </div>

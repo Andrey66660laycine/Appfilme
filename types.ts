@@ -1,5 +1,4 @@
 
-
 export interface Movie {
   id: number;
   title: string;
@@ -133,9 +132,17 @@ declare global {
         
         // Método novo para Cast Nativo
         castVideo: (url: string, title: string) => void;
-        // Avisa o app nativo que o link foi pego e o player iniciou (para parar sniffers)
+        
+        // Controle de Orientação
+        setOrientation: (orientation: 'landscape' | 'portrait' | 'auto') => void;
+
+        // Controle de Sniffer (Captura de links)
+        stopSniffer: () => void;  // "Já peguei o link, pode parar"
+        startSniffer: () => void; // "Parei de assistir, volta a capturar"
+
+        // Avisa o app nativo que o link foi pego e o player iniciou (para parar sniffers - legado)
         onVideoPlaying?: (url: string) => void;
-        // Avisa o app nativo que o player fechou (para retomar sniffers se necessário)
+        // Avisa o app nativo que o player fechou (para retomar sniffers se necessário - legado)
         onPlayerClosed?: () => void;
         
         // --- DOWNLOADS OFFLINE ---

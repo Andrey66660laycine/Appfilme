@@ -1,4 +1,5 @@
 
+
 export interface Movie {
   id: number;
   title: string;
@@ -61,7 +62,8 @@ export interface CastMember {
 }
 
 export interface WatchHistoryItem {
-  id: number;
+  id: number | string;
+  tmdb_id?: number;
   type: 'movie' | 'tv';
   title: string;
   poster_path: string;

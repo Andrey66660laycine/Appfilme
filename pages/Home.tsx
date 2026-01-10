@@ -23,17 +23,16 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
   const [showBanner, setShowBanner] = useState(true);
   const [activeTab, setActiveTab] = useState<'all' | 'movie' | 'tv' | 'originals'>('all');
 
+  // Atualização robusta do histórico via LocalStorage
   const refreshHistory = async () => {
       if (!currentProfile) return;
+      // Agora pega do LocalStorage, muito mais rápido
       const history = await storageService.getHistory(currentProfile.id);
       
-      // FILTRA ITENS TERMINADOS (>95% visto) para não poluir o "Continue Watching"
       const continueWatching = history.filter(item => {
           if (!item.duration || item.duration === 0) return true;
-          // Fix: Ensure progress is a number (default to 0 if undefined)
-          const progress = item.progress || 0;
-          const pct = (progress / item.duration);
-          return pct < 0.95; 
+          const pct = (item.progress / item.duration);
+          return pct < 0.95 && pct > 0.02; // Filtra terminados e iniciados acidentalmente
       });
 
       setWatchHistory(continueWatching);
@@ -42,9 +41,7 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
   useEffect(() => {
       const onFocus = () => refreshHistory();
       window.addEventListener('focus', onFocus);
-      // Atualiza a cada 5s para refletir mudanças do player rapidamente
-      const interval = setInterval(refreshHistory, 5000);
-      
+      const interval = setInterval(refreshHistory, 2000); // Polling mais rápido para refletir mudanças do player
       return () => {
           window.removeEventListener('focus', onFocus);
           clearInterval(interval);
@@ -73,11 +70,7 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
             setInList(exists);
         }
 
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+      } catch (err) { console.error(err); } finally { setLoading(false); }
     };
     fetchData();
   }, [currentProfile, activeTab]);
@@ -99,12 +92,13 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
   };
 
   const handleHistoryClick = async (item: WatchHistoryItem) => {
-    let playConfig: any = {
+    // Configuração para abrir o player direto no ponto salvo
+    const playConfig: any = {
         type: item.type,
-        tmdbId: Number(item.id),
+        tmdbId: Number(item.id || item.tmdb_id),
         season: item.season || 1,
         episode: item.episode || 1,
-        initialTime: item.progress || 0 
+        initialTime: item.progress || 0 // Tempo exato salvo no LocalStorage
     };
 
     if (item.type === 'tv') {
@@ -126,7 +120,7 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
       e.stopPropagation();
       if (!currentProfile) return;
       await storageService.removeFromHistory(currentProfile.id, item.id, item.type);
-      setWatchHistory(prev => prev.filter(i => !(i.id === item.id && i.type === item.type)));
+      refreshHistory();
   };
 
   const toggleMyList = async () => {
@@ -175,144 +169,87 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
      }
   };
 
-  const submitBugReport = () => {
-      alert("Relatório enviado com sucesso! Obrigado por ajudar a melhorar o Void Max.");
-      setShowBugModal(false);
-      setBugDescription('');
-  }
-
   const getTitle = (item: Movie) => item.title || (item as any).name || 'Untitled';
   const getDate = (item: Movie) => (item.release_date || (item as any).first_air_date || '').split('-')[0];
 
   return (
-    <div className="animate-fade-in relative">
+    <div className="animate-fade-in relative bg-black pb-24">
 
-      {/* GLOBAL BANNER */}
       {showBanner && (
           <div className="relative z-50 bg-gradient-to-r from-blue-900 to-primary/80 text-white text-xs font-bold px-4 py-2 flex items-center justify-center text-center animate-slide-up shadow-lg border-b border-white/10">
               <span className="material-symbols-rounded text-sm mr-2 animate-pulse">info</span>
               <span>Novos servidores adicionados. Melhor qualidade e velocidade.</span>
-              <button onClick={() => setShowBanner(false)} className="absolute right-2 p-1 hover:bg-white/20 rounded-full transition-colors">
-                  <span className="material-symbols-rounded text-sm">close</span>
-              </button>
+              <button onClick={() => setShowBanner(false)} className="absolute right-2 p-1 hover:bg-white/20 rounded-full transition-colors"><span className="material-symbols-rounded text-sm">close</span></button>
           </div>
       )}
       
-      {/* AI SUGGESTION MODAL */}
-      {showAIModal && (
-          <AISuggestionModal 
-            onClose={() => setShowAIModal(false)}
-            onPlay={handleAIPlay}
-            history={watchHistory}
-            isKid={currentProfile?.is_kid || false}
-          />
-      )}
+      {showAIModal && <AISuggestionModal onClose={() => setShowAIModal(false)} onPlay={handleAIPlay} history={watchHistory} isKid={currentProfile?.is_kid || false} />}
 
-      {/* BUG REPORT MODAL */}
       {showBugModal && (
           <div className="fixed inset-0 z-[160] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
-              <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-pop-in">
+              <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl w-full max-w-md p-6 shadow-2xl">
                   <div className="flex justify-between items-center mb-4">
-                      <h2 className="text-xl font-display font-bold text-white flex items-center gap-2">
-                          <span className="material-symbols-rounded text-red-500">bug_report</span>
-                          Reportar Problema
-                      </h2>
-                      <button onClick={() => setShowBugModal(false)} className="text-white/50 hover:text-white transition-colors">
-                          <span className="material-symbols-rounded">close</span>
-                      </button>
+                      <h2 className="text-xl font-display font-bold text-white">Reportar Problema</h2>
+                      <button onClick={() => setShowBugModal(false)} className="text-white/50 hover:text-white"><span className="material-symbols-rounded">close</span></button>
                   </div>
-                  <textarea 
-                    value={bugDescription}
-                    onChange={(e) => setBugDescription(e.target.value)}
-                    placeholder="Descreva o problema aqui..." 
-                    className="w-full h-32 bg-black/40 border border-white/10 rounded-lg p-3 text-white text-sm focus:outline-none focus:border-primary resize-none mb-4"
-                  />
-                  <div className="flex justify-end gap-3">
-                      <button onClick={() => setShowBugModal(false)} className="px-4 py-2 text-white/60 hover:text-white text-sm font-bold">Cancelar</button>
-                      <button onClick={submitBugReport} className="px-6 py-2 bg-white text-black rounded-lg font-bold text-sm hover:bg-gray-200 transition-colors">Enviar Relatório</button>
-                  </div>
+                  <textarea value={bugDescription} onChange={(e) => setBugDescription(e.target.value)} placeholder="Descreva..." className="w-full h-32 bg-black/40 border border-white/10 rounded-lg p-3 text-white text-sm mb-4" />
+                  <button onClick={() => { alert("Enviado!"); setShowBugModal(false); }} className="w-full bg-white text-black py-2 rounded-lg font-bold">Enviar</button>
               </div>
           </div>
       )}
 
-      {/* FLOATING ACTION BUTTON (AI) */}
+      {/* FAB AI */}
       <div className="fixed bottom-24 right-4 z-40 lg:bottom-10 lg:right-10 animate-fade-in-up">
-          <button 
-            onClick={() => setShowAIModal(true)}
-            className="group relative flex items-center justify-center w-14 h-14 bg-white text-black rounded-full shadow-[0_0_20px_rgba(255,255,255,0.4)] hover:shadow-[0_0_35px_rgba(242,13,242,0.6)] hover:scale-110 transition-all duration-300"
-          >
-              <div className="absolute inset-0 rounded-full border-2 border-primary opacity-0 group-hover:opacity-100 animate-ping"></div>
+          <button onClick={() => setShowAIModal(true)} className="group relative flex items-center justify-center w-14 h-14 bg-white text-black rounded-full shadow-[0_0_20px_rgba(255,255,255,0.4)] hover:shadow-[0_0_35px_rgba(242,13,242,0.6)] hover:scale-110 transition-all duration-300">
               <span className="material-symbols-rounded text-3xl group-hover:rotate-12 transition-transform text-primary fill-1">auto_awesome</span>
           </button>
       </div>
 
-      {/* HERO SECTION */}
+      {/* HERO */}
       <header className="relative w-full h-[85vh] min-h-[600px] overflow-hidden">
-          <div className="absolute inset-0 bg-cover bg-center animate-zoom-slow" 
-               style={{backgroundImage: `url(${tmdb.getBackdropUrl(featured.backdrop_path, 'original')})`}}>
-          </div>
-          <div className="absolute inset-0 bg-gradient-to-t from-background-dark via-background-dark/30 to-transparent"></div>
-          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-transparent"></div>
-          <div className="absolute inset-0 bg-gradient-to-r from-background-dark/80 via-transparent to-transparent"></div>
+          <div className="absolute inset-0 bg-cover bg-center animate-zoom-slow" style={{backgroundImage: `url(${tmdb.getBackdropUrl(featured.backdrop_path, 'original')})`}}></div>
+          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent"></div>
+          <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-transparent to-transparent"></div>
 
           <div className="absolute top-24 right-4 md:right-8 z-30">
-              <button 
-                onClick={() => setShowBugModal(true)}
-                className="flex items-center gap-2 bg-black/40 hover:bg-red-500/20 backdrop-blur-md border border-white/10 hover:border-red-500/50 px-3 py-1.5 rounded-full transition-all group"
-              >
-                  <span className="material-symbols-rounded text-white/50 group-hover:text-red-400 text-sm">bug_report</span>
-                  <span className="text-[10px] font-bold text-white/50 group-hover:text-white uppercase tracking-wider hidden md:block">Reportar Bug</span>
+              <button onClick={() => setShowBugModal(true)} className="flex items-center gap-2 bg-black/40 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-full transition-all group">
+                  <span className="material-symbols-rounded text-white/50 text-sm">bug_report</span>
               </button>
           </div>
 
           <div className="absolute bottom-0 left-0 w-full p-6 pb-12 lg:pb-20 flex flex-col items-start lg:items-start lg:pl-16 z-10 max-w-7xl mx-auto opacity-0 animate-slide-up">
               <div className="mb-4 flex flex-wrap items-center gap-3">
                   <span className="text-[11px] font-bold tracking-widest uppercase text-primary bg-primary/10 border border-primary/20 backdrop-blur-md px-2 py-1 rounded">Destaque #1</span>
-                  {currentProfile?.is_kid && <span className="bg-yellow-400 text-black text-[10px] font-bold px-2 py-1 rounded uppercase">Kids</span>}
                   <span className="text-white/80 text-xs font-medium bg-white/10 px-2 py-1 rounded">{getDate(featured)}</span>
-                  <span className="flex items-center gap-1 text-xs font-medium text-yellow-400">
-                      <span className="material-symbols-rounded text-sm fill-current">star</span> {featured.vote_average.toFixed(1)}
-                  </span>
+                  <span className="flex items-center gap-1 text-xs font-medium text-yellow-400"><span className="material-symbols-rounded text-sm fill-current">star</span> {featured.vote_average.toFixed(1)}</span>
               </div>
 
               <h1 className="text-5xl md:text-7xl font-display font-bold text-white mb-4 tracking-tight drop-shadow-2xl leading-[0.9]">
-                  {getTitle(featured).split(':')[0]} <br />
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-purple-400">
-                    {getTitle(featured).split(':')[1] || ''}
-                  </span>
+                  {getTitle(featured)}
               </h1>
 
-              <p className="text-white/70 text-sm md:text-base leading-relaxed line-clamp-3 max-w-md mb-8 font-light">
-                  {featured.overview}
-              </p>
+              <p className="text-white/70 text-sm md:text-base leading-relaxed line-clamp-3 max-w-md mb-8 font-light">{featured.overview}</p>
 
               <div className="flex items-center flex-wrap gap-4 w-full md:w-auto">
                   <button onClick={handleFeaturedPlay} className="group flex items-center justify-center gap-2 bg-white text-black px-8 py-3.5 rounded-full font-bold text-base hover:scale-105 transition-all duration-300 w-full md:w-auto min-w-[160px]">
-                      <span className="material-symbols-rounded text-3xl group-hover:text-primary transition-colors">play_arrow</span>
-                      Assistir
+                      <span className="material-symbols-rounded text-3xl group-hover:text-primary transition-colors">play_arrow</span> Assistir
                   </button>
-                  
-                  <button 
-                    onClick={toggleMyList}
-                    className={`group flex items-center justify-center gap-2 px-6 py-3.5 rounded-full font-medium text-base active:scale-95 transition-all w-full md:w-auto min-w-[160px] ${inList ? 'bg-green-500/20 text-green-400 border border-green-500/50' : 'glass text-white hover:bg-white/10'}`}
-                  >
-                      <span className={`material-symbols-rounded transition-transform duration-300 ${!inList ? 'group-hover:rotate-90' : ''}`}>
-                        {inList ? 'check' : 'add'}
-                      </span>
+                  <button onClick={toggleMyList} className={`group flex items-center justify-center gap-2 px-6 py-3.5 rounded-full font-medium text-base active:scale-95 transition-all w-full md:w-auto min-w-[160px] ${inList ? 'bg-green-500/20 text-green-400 border border-green-500/50' : 'glass text-white hover:bg-white/10'}`}>
+                      <span className={`material-symbols-rounded transition-transform duration-300 ${!inList ? 'group-hover:rotate-90' : ''}`}>{inList ? 'check' : 'add'}</span>
                       <span>{inList ? 'Adicionado' : 'Minha Lista'}</span>
                   </button>
               </div>
           </div>
       </header>
 
-      <main className="relative z-10 -mt-10 lg:-mt-20 space-y-12 pb-10">
+      <main className="relative z-10 -mt-10 lg:-mt-20 space-y-12">
           
-          {/* SECTION: Retomar Exibição (NOVO DESIGN WIDE) */}
+          {/* SECTION: CONTINUE WATCHING (PREMIUM REDESIGN) */}
           {activeTab === 'all' && watchHistory.length > 0 && (
             <section className="pl-4 lg:pl-16 opacity-0 animate-slide-up" style={{ animationDelay: '0.2s' }}>
                 <div className="flex items-center justify-between pr-4 mb-4">
                     <h2 className="text-white text-lg md:text-xl font-display font-bold tracking-tight flex items-center gap-2">
-                        Retomar Exibição
+                        Continuar Assistindo
                         <span className="material-symbols-rounded text-primary text-base animate-pulse">resume</span>
                     </h2>
                 </div>
@@ -320,36 +257,29 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
                 <div className="flex overflow-x-auto gap-4 pb-8 pr-4 hide-scrollbar snap-x cursor-grab active:cursor-grabbing">
                     {watchHistory.map((item) => {
                         const percent = (item.duration || 0) > 0 ? ((item.progress || 0) / (item.duration || 1)) * 100 : 0;
-                        
                         return (
-                          <div key={`${item.id}-${item.timestamp}`} onClick={() => handleHistoryClick(item)} className="flex-none w-[280px] md:w-[320px] snap-start group relative cursor-pointer">
-                              
-                              {/* Remove Button */}
-                              <button 
-                                onClick={(e) => handleRemoveFromHistory(e, item)}
-                                className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-red-500 text-white/70 hover:text-white flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 z-30 backdrop-blur-sm border border-white/10"
-                              >
+                          <div key={`${item.id}-${item.timestamp}`} onClick={() => handleHistoryClick(item)} className="flex-none w-[260px] md:w-[300px] snap-start group relative cursor-pointer">
+                              {/* Close Button */}
+                              <button onClick={(e) => handleRemoveFromHistory(e, item)} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-red-500 text-white/70 hover:text-white flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 z-30 backdrop-blur-sm border border-white/10">
                                 <span className="material-symbols-rounded text-lg">close</span>
                               </button>
 
-                              {/* Wide Card */}
-                              <div className="relative aspect-video rounded-xl overflow-hidden bg-gray-800 shadow-xl ring-1 ring-white/5 group-hover:ring-primary/50 transition-all duration-300">
+                              {/* Card Image */}
+                              <div className="relative aspect-video rounded-xl overflow-hidden bg-gray-900 shadow-xl ring-1 ring-white/10 group-hover:ring-primary/50 transition-all duration-300">
                                   <img src={tmdb.getBackdropUrl(item.backdrop_path, 'w780')} alt={item.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 opacity-80 group-hover:opacity-100" />
-                                  
-                                  {/* Center Play Button */}
                                   <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors flex items-center justify-center">
-                                      <div className="w-14 h-14 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center group-hover:scale-110 transition-all duration-300 border border-white/30 group-hover:bg-primary group-hover:border-primary">
+                                      <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center group-hover:scale-110 transition-all duration-300 border border-white/30 group-hover:bg-primary group-hover:border-primary shadow-lg">
                                           <span className="material-symbols-rounded text-white text-3xl ml-1 fill-1">play_arrow</span>
                                       </div>
                                   </div>
                                   
-                                  {/* Progress Bar Container */}
+                                  {/* Progress Bar (Neon) */}
                                   <div className="absolute bottom-0 left-0 w-full h-1 bg-white/10 backdrop-blur-sm">
                                       <div className="h-full bg-gradient-to-r from-primary to-purple-500 shadow-[0_0_10px_#f20df2]" style={{ width: `${percent}%` }}></div>
                                   </div>
 
-                                  {/* Time Remaining Badge */}
-                                  <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-bold text-white/80 border border-white/10">
+                                  {/* Remaining Time Badge */}
+                                  <div className="absolute bottom-3 right-3 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[9px] font-bold text-white/90 border border-white/10">
                                       {Math.round(((item.duration || 0) - (item.progress || 0)) / 60)} min rest.
                                   </div>
                               </div>
@@ -358,9 +288,11 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
                                   <h3 className="text-white text-sm font-bold truncate group-hover:text-primary transition-colors">{item.title}</h3>
                                   {item.type === 'tv' && (
                                       <div className="flex items-center gap-2 mt-1">
-                                          <span className="text-[10px] font-bold text-black bg-white px-1.5 rounded">S{item.season} E{item.episode}</span>
+                                          <span className="text-[10px] font-bold text-black bg-white px-1.5 rounded uppercase tracking-wide">S{item.season} E{item.episode}</span>
+                                          <span className="text-[10px] text-white/40">Continuar de {Math.floor((item.progress || 0) / 60)}m</span>
                                       </div>
                                   )}
+                                  {item.type === 'movie' && <span className="text-[10px] text-white/40 mt-1 block">Filme • {Math.floor(percent)}% Completo</span>}
                               </div>
                           </div>
                         );
@@ -369,7 +301,7 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
             </section>
           )}
           
-          {/* SECTION: Top 10 Trending */}
+          {/* SECTION: Top 10 */}
           <section className="pl-4 lg:pl-16">
               <h2 className="text-white text-lg md:text-xl font-display font-bold tracking-tight mb-6">
                   {currentProfile?.is_kid ? 'Mais Populares' : `Top 10 ${activeTab === 'movie' ? 'Filmes' : activeTab === 'tv' ? 'Séries' : 'Hoje'}`}
@@ -386,19 +318,20 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
               </div>
           </section>
 
-          {/* SECTION: Recommended */}
+          {/* SECTION: Recommended Grid */}
           <section className="pl-4 lg:pl-16 mb-20 px-4">
               <div className="flex items-center gap-4 mb-5 overflow-x-auto hide-scrollbar pr-4">
-                  <button onClick={() => setActiveTab('all')} className={`px-4 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-all ${activeTab === 'all' ? 'bg-white text-black' : 'glass text-white hover:bg-white/10'}`}>Para Você</button>
-                  <button onClick={() => setActiveTab('movie')} className={`px-4 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-all ${activeTab === 'movie' ? 'bg-white text-black' : 'glass text-white hover:bg-white/10'}`}>Filmes</button>
-                  <button onClick={() => setActiveTab('tv')} className={`px-4 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-all ${activeTab === 'tv' ? 'bg-white text-black' : 'glass text-white hover:bg-white/10'}`}>Séries</button>
-                  {!currentProfile?.is_kid && <button onClick={() => setActiveTab('originals')} className={`px-4 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-all ${activeTab === 'originals' ? 'bg-white text-black' : 'glass text-white hover:bg-white/10'}`}>Originais</button>}
+                  {['all', 'movie', 'tv', 'originals'].map(tab => (
+                      <button key={tab} onClick={() => setActiveTab(tab as any)} className={`px-4 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-all ${activeTab === tab ? 'bg-white text-black' : 'glass text-white hover:bg-white/10'}`}>
+                          {tab === 'all' ? 'Para Você' : tab === 'movie' ? 'Filmes' : tab === 'tv' ? 'Séries' : 'Originais'}
+                      </button>
+                  ))}
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 pr-4 max-w-7xl">
                   {others.map(item => (
                     <div key={item.id} onClick={() => handleClick(item)} className="relative aspect-[2/3] rounded-lg overflow-hidden group cursor-pointer ring-1 ring-white/5 hover:ring-primary/50 transition-all duration-300">
-                        <img src={tmdb.getPosterUrl(item.poster_path)} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt={getTitle(item)} />
+                        <img src={tmdb.getPosterUrl(item.poster_path)} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt={getTitle(item)} loading="lazy" />
                         <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
                             <div>
                                 <p className="text-white text-sm font-bold truncate">{getTitle(item)}</p>

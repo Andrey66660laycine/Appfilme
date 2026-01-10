@@ -24,7 +24,7 @@ export const ProfileContext = createContext<Profile | null>(null);
 
 interface PlayerState {
   type: 'movie' | 'tv';
-  id: string; 
+  id: string; // IMDB ID para filmes (geralmente), TMDB ID para séries (string)
   tmdbId?: number; 
   season?: number;
   episode?: number;
@@ -59,6 +59,10 @@ const App: React.FC = () => {
   const [showAds, setShowAds] = useState(false);
   const [adTimer, setAdTimer] = useState(15);
   
+  // Player Server State
+  const [activeServer, setActiveServer] = useState<'playerflix' | 'superflix'>('playerflix');
+  const [videoFoundOverlay, setVideoFoundOverlay] = useState(false);
+
   // New States for Smart Features
   const [achievementToast, setAchievementToast] = useState<{ visible: boolean; id: string }>({ visible: false, id: '' });
   const [welcomeBackToast, setWelcomeBackToast] = useState<{ visible: boolean; item: any }>({ visible: false, item: null });
@@ -131,19 +135,45 @@ const App: React.FC = () => {
         }
 
         // 2. Validação de Vídeo (Aceitação)
-        // Aceita se tiver extensão válida OU se o sniffer nativo disse que é vídeo (blob)
         const isValidVideo = VIDEO_PATTERNS.some(regex => regex.test(url)) || url.startsWith('blob:');
 
         if (isValidVideo) {
             console.log("✅ VÍDEO VÁLIDO DETECTADO:", url);
             
-            // Lógica para evitar loops ou reloads desnecessários
+            // Lógica de Feedback Visual "Achamos seu link!"
+            // Se já tivermos o link, não fazemos a animação de novo
             setNativeVideoUrl(prev => {
-                if (prev === url) return prev; // Não atualiza se for o mesmo
-                return url;
+                if (prev === url) return prev;
+                
+                // Dispara a animação de "Video Encontrado"
+                setVideoFoundOverlay(true);
+                
+                // Aguarda um pouco para o usuário ver a animação antes de montar o player nativo
+                setTimeout(() => {
+                    setNativeVideoUrl(url);
+                    setIsIframeLoaded(false); 
+                    // Remove o overlay um pouco depois do player iniciar para transição suave
+                    setTimeout(() => setVideoFoundOverlay(false), 500);
+                }, 1500);
+
+                return prev; // Retorna o anterior temporariamente, o setTimeout vai atualizar de verdade se fosse react puro, mas aqui usamos setNativeVideoUrl dentro do timeout seria o ideal, porem, como o setNativeVideoUrl ja dispara a re-renderizacao do CustomVideoPlayer, vamos ajustar:
             });
             
-            setIsIframeLoaded(false); // Oculta embed
+            // Solução correta para React State no callback:
+            // Apenas definimos o estado dentro do fluxo se ele mudou
+            setNativeVideoUrl(current => {
+                if (current === url) return current;
+                
+                // Novo video detectado
+                setVideoFoundOverlay(true);
+                setTimeout(() => {
+                    setNativeVideoUrl(url);
+                    setIsIframeLoaded(false);
+                    setTimeout(() => setVideoFoundOverlay(false), 1000);
+                }, 1200);
+                
+                return current; // Mantém null/antigo até o timeout bater
+            });
         } else {
             console.log("⚠️ Link suspeito ignorado:", url);
         }
@@ -357,9 +387,11 @@ const App: React.FC = () => {
   const startVideoPlayer = async (config: PlayerState) => {
     setIsIframeLoaded(false);
     setNativeVideoUrl(null); 
+    setVideoFoundOverlay(false);
     setFailedUrls(new Set()); 
     setIsPlayerStable(false);
     setPendingPlayerState(null);
+    setActiveServer('playerflix'); // Default server
 
     // Timeout para fallback visual se o iframe demorar
     if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
@@ -384,7 +416,9 @@ const App: React.FC = () => {
             setPlayerState(prev => prev ? ({
                 ...prev,
                 title: config.type === 'movie' ? details.title : details.name,
-                backdrop: details.backdrop_path
+                backdrop: details.backdrop_path,
+                // Garantimos que temos o IMDB_ID para filmes (usado pelo SuperFlix)
+                id: config.type === 'movie' ? (details.imdb_id || String(config.tmdbId)) : String(config.tmdbId)
             }) : null);
 
             await storageService.addToHistory(currentProfile.id, {
@@ -443,6 +477,7 @@ const App: React.FC = () => {
       setNativeVideoUrl(null);
       setPlayerState(null);
       setIsPlayerStable(false);
+      setVideoFoundOverlay(false);
       if (window.history.state?.playerOpen) window.history.back();
   };
 
@@ -466,9 +501,21 @@ const App: React.FC = () => {
 
   const getEmbedUrl = () => {
     if (!playerState) return '';
-    // Apenas a URL do embed, o Android vai interceptar o tráfego daqui
-    if (playerState.type === 'movie') return `https://playerflixapi.com/filme/${playerState.id}`;
-    return `https://playerflixapi.com/serie/${playerState.id}/${playerState.season}/${playerState.episode}`;
+    
+    // SERVER 2: SUPERFLIX (Fallback/Alternative)
+    if (activeServer === 'superflix') {
+        if (playerState.type === 'movie') {
+            // Requer ID do IMDB para filmes
+            return `https://superflixapi.buzz/filme/${playerState.id}`;
+        }
+        // Requer TMDB ID para séries
+        const tmdbId = playerState.tmdbId || playerState.id;
+        return `https://superflixapi.buzz/serie/${tmdbId}/${playerState.season}/${playerState.episode}`;
+    }
+
+    // SERVER 1: PLAYERFLIX (Principal)
+    if (playerState.type === 'movie') return `https://playerflixapi.com/filme/${playerState.tmdbId || playerState.id}`;
+    return `https://playerflixapi.com/serie/${playerState.tmdbId || playerState.id}/${playerState.season}/${playerState.episode}`;
   };
 
   const renderContent = () => {
@@ -554,7 +601,7 @@ const App: React.FC = () => {
                       </div>
                       <h2 className="text-xl font-display font-bold text-white mb-2">Dica de Reprodução</h2>
                       <p className="text-white/70 text-sm leading-relaxed mb-6">
-                          Se o vídeo não carregar, tente a opção <b>"Trocar Servidor"</b>.
+                          Se o vídeo não carregar, use o seletor <b>"Servidor"</b> no topo do player para trocar a fonte.
                       </p>
                       <button onClick={handleConfirmNotice} className="w-full bg-white text-black font-bold py-3.5 rounded-xl hover:bg-gray-200 transition-all mb-4">Entendi, Vamos Assistir</button>
                       <div className="flex items-center justify-center gap-2 cursor-pointer group" onClick={() => setDontShowNoticeAgain(!dontShowNoticeAgain)}>
@@ -585,8 +632,24 @@ const App: React.FC = () => {
           </div>
       )}
 
+      {/* --- OVERLAY: VIDEO FOUND (Transição suave) --- */}
+      {videoFoundOverlay && (
+          <div className="fixed inset-0 z-[140] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center animate-fade-in pointer-events-none">
+              <div className="relative">
+                  <div className="w-24 h-24 bg-primary/20 rounded-full flex items-center justify-center animate-ping-slow"></div>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="material-symbols-rounded text-6xl text-primary drop-shadow-[0_0_20px_#f20df2]">check_circle</span>
+                  </div>
+              </div>
+              <h2 className="mt-8 text-2xl font-display font-bold text-white tracking-widest uppercase animate-slide-up">
+                  Vídeo Encontrado!
+              </h2>
+              <p className="mt-2 text-white/50 text-sm animate-pulse">Carregando Player Nativo...</p>
+          </div>
+      )}
+
       {/* --- PLAYER NATIVO (Alta Prioridade com Suporte a .txt/.m3u8/.mp4) --- */}
-      {nativeVideoUrl && playerState && currentProfile && (
+      {nativeVideoUrl && playerState && currentProfile && !videoFoundOverlay && (
         <CustomVideoPlayer 
             src={nativeVideoUrl}
             onClose={closeNativePlayer}
@@ -605,25 +668,51 @@ const App: React.FC = () => {
       )}
 
       {/* --- PLAYER EMBED (Fallback) --- */}
-      {playerState && !nativeVideoUrl && !showAds && !showServerNotice && (
+      {playerState && !nativeVideoUrl && !showAds && !showServerNotice && !videoFoundOverlay && (
         <div className="fixed inset-0 z-[100] bg-black animate-fade-in flex flex-col overflow-hidden">
             
+            {/* Server Switcher & Title */}
+            <div className="absolute top-0 left-0 w-full z-30 p-4 flex justify-between items-start bg-gradient-to-b from-black/90 to-transparent pointer-events-none">
+                <div className="pointer-events-auto flex items-center gap-4">
+                    <button onClick={closeNativePlayer} className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center hover:bg-white/20 transition-colors text-white">
+                        <span className="material-symbols-rounded">arrow_back</span>
+                    </button>
+                    <div>
+                        <h2 className="text-white font-bold text-sm shadow-black drop-shadow-md">{playerState.title}</h2>
+                        {playerState.type === 'tv' && <p className="text-white/60 text-xs">S{playerState.season} E{playerState.episode}</p>}
+                    </div>
+                </div>
+
+                <div className="pointer-events-auto bg-black/60 backdrop-blur-md border border-white/10 rounded-lg p-1 flex gap-1">
+                    <button 
+                        onClick={() => { setActiveServer('playerflix'); setIsIframeLoaded(false); }}
+                        className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${activeServer === 'playerflix' ? 'bg-primary text-white shadow-lg' : 'text-white/50 hover:bg-white/10 hover:text-white'}`}
+                    >
+                        Opção 1
+                    </button>
+                    <button 
+                        onClick={() => { setActiveServer('superflix'); setIsIframeLoaded(false); }}
+                        className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${activeServer === 'superflix' ? 'bg-primary text-white shadow-lg' : 'text-white/50 hover:bg-white/10 hover:text-white'}`}
+                    >
+                        Opção 2
+                    </button>
+                </div>
+            </div>
+
             {/* Loading/Cover Screen for Embed */}
-            <div className={`absolute inset-0 z-20 flex flex-col items-center justify-center bg-black transition-opacity duration-700 ease-in-out ${isIframeLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+            <div className={`absolute inset-0 z-20 flex flex-col items-center justify-center bg-black transition-opacity duration-700 ease-in-out pointer-events-none ${isIframeLoaded ? 'opacity-0' : 'opacity-100'}`}>
                 {playerState.backdrop && (
                     <div className="absolute inset-0 bg-cover bg-center opacity-40 scale-110 blur-xl animate-pulse-slow" style={{backgroundImage: `url(${tmdb.getBackdropUrl(playerState.backdrop)})`}}></div>
                 )}
                 <div className="relative z-10 flex flex-col items-center text-center p-6">
                     <div className="w-20 h-20 border-4 border-white/10 border-t-primary rounded-full animate-spin mb-8 shadow-[0_0_30px_var(--primary-color)]"></div>
-                    <h2 className="text-3xl md:text-5xl font-display font-bold text-white mb-2 tracking-tight drop-shadow-xl">{playerState.title || "Void Max"}</h2>
-                    {playerState.type === 'tv' && <p className="text-white/70 text-lg font-medium mb-1">Temporada {playerState.season} • Episódio {playerState.episode}</p>}
                     <div className="flex flex-col items-center gap-2 mt-4">
                         <div className="flex items-center gap-2">
                             <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></span>
-                            <span className="text-xs uppercase tracking-[0.2em] text-primary font-bold">Conectando</span>
+                            <span className="text-xs uppercase tracking-[0.2em] text-primary font-bold">Conectando ao {activeServer === 'playerflix' ? 'Servidor 1' : 'Servidor 2'}</span>
                         </div>
                         <p className="text-white/30 text-[10px] uppercase tracking-widest mt-2 animate-pulse">
-                            Buscando melhor fonte de vídeo...
+                            Aguarde o vídeo carregar...
                         </p>
                     </div>
                 </div>
@@ -631,6 +720,7 @@ const App: React.FC = () => {
             
             <div className="flex-1 w-full h-full relative bg-black">
                  <iframe 
+                    key={activeServer} // Força reload do iframe ao trocar server
                     src={getEmbedUrl()} 
                     width="100%" height="100%" 
                     frameBorder="0" allowFullScreen 
@@ -638,6 +728,7 @@ const App: React.FC = () => {
                     title="Player" 
                     allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
                     referrerPolicy="no-referrer"
+                    onLoad={() => setIsIframeLoaded(true)}
                  ></iframe>
             </div>
         </div>

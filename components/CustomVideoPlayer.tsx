@@ -35,6 +35,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [showControls, setShowControls] = useState(true);
+  const [showUnlockButton, setShowUnlockButton] = useState(false); // Novo estado para o botão de bloqueio
   const [isLoading, setIsLoading] = useState(true);
   const [isLocked, setIsLocked] = useState(false);
   const [fitMode, setFitMode] = useState<'contain' | 'cover'>('contain');
@@ -42,97 +43,136 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [hasResumed, setHasResumed] = useState(false);
-  const [showSkipIntro, setShowSkipIntro] = useState(false);
   
+  // Skip States
+  const [showSkipIntro, setShowSkipIntro] = useState(false);
+  const [showSkipRecap, setShowSkipRecap] = useState(false);
+  const [skipTimeTarget, setSkipTimeTarget] = useState(0); // Para onde pular
+  
+  // Data
+  const [currentEpisodeData, setCurrentEpisodeData] = useState<Episode | null>(null);
+  const [seasonEpisodes, setSeasonEpisodes] = useState<Episode[]>([]);
+  const [isDownloading, setIsDownloading] = useState(false);
+
   // Volume & Brightness (Visuals)
   const [volume, setVolume] = useState(1);
   const [brightness, setBrightness] = useState(1);
   const [gestureIndicator, setGestureIndicator] = useState<{ type: 'volume' | 'brightness', value: number } | null>(null);
 
-  // Data
-  const [seasonEpisodes, setSeasonEpisodes] = useState<Episode[]>([]);
-  const [isDownloading, setIsDownloading] = useState(false);
-
   // Refs
   const controlsTimeoutRef = useRef<number | null>(null);
+  const lockTimeoutRef = useRef<number | null>(null);
   const touchStartRef = useRef<{ x: number, y: number } | null>(null);
 
   // --- NATIVE BRIDGE LIFECYCLE ---
   useEffect(() => {
-      // 1. Ao entrar no player: Forçar Landscape e Parar Sniffer
       if (window.Android) {
           try {
               if (window.Android.setOrientation) window.Android.setOrientation('landscape');
-              if (window.Android.stopSniffer) window.Android.stopSniffer(); // "Já peguei o link"
+              if (window.Android.stopSniffer) window.Android.stopSniffer(); 
           } catch(e) { console.error("Erro na bridge nativa (mount):", e); }
       }
 
       return () => {
-          // 2. Ao sair do player: Voltar para Portrait (ou Auto) e Retomar Sniffer
           if (window.Android) {
               try {
                   if (window.Android.setOrientation) window.Android.setOrientation('portrait');
-                  if (window.Android.startSniffer) window.Android.startSniffer(); // "Pode voltar a capturar"
+                  if (window.Android.startSniffer) window.Android.startSniffer();
                   if (window.Android.onPlayerClosed) window.Android.onPlayerClosed();
               } catch(e) { console.error("Erro na bridge nativa (unmount):", e); }
           }
       };
   }, []);
 
-  // --- LOGIC ---
-  const handleDownload = () => {
-    if (isDownloading) return;
-    setIsDownloading(true);
-    const meta = JSON.stringify({
-        id: String(tmdbId || 0),
-        title: title || "Download",
-        type: type || 'movie',
-        season: season || 0,
-        episode: episode || 0,
-    });
-    
-    if (window.Android?.download) {
-        window.Android.download(src, meta);
-        setTimeout(() => { onClose(); }, 1000);
-    } else {
-        // Fallback for web
-        const a = document.createElement('a'); a.href = src; a.download = title || 'video.mp4';
-        a.target = '_blank'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        setIsDownloading(false);
-    }
-  };
+  // --- CONTROLS VISIBILITY LOGIC (Refined) ---
+  const showControlsTemporarily = () => {
+      // Se estiver bloqueado, mostra apenas o botão de desbloqueio
+      if (isLocked) {
+          setShowUnlockButton(true);
+          if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current);
+          lockTimeoutRef.current = window.setTimeout(() => setShowUnlockButton(false), 2500);
+          return;
+      }
 
-  const handleCast = () => {
-      if (window.Android?.castVideo) {
-          window.Android.castVideo(src, title);
-      } else {
-          // Fallback Web (Chrome Cast API placeholder - usually requires sender SDK)
-          alert("Transmitir para TV (Disponível no App Nativo)");
+      // Se não bloqueado, mostra controles normais
+      setShowControls(true);
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+      if (playing && !showSidePanel) {
+          // Tempo reduzido para 2.5s para desaparecer mais rápido
+          controlsTimeoutRef.current = window.setTimeout(() => setShowControls(false), 2500);
       }
   };
 
-  const toggleFullscreen = () => {
-      if (!document.fullscreenElement) {
-          containerRef.current?.requestFullscreen().catch(err => console.log(err));
-          if (window.Android?.setOrientation) window.Android.setOrientation('landscape');
-      } else {
-          document.exitFullscreen();
-          // Dont force portrait here, let the exit handle it or sensor
-      }
-  };
+  useEffect(() => {
+      showControlsTemporarily();
+      const onInt = () => showControlsTemporarily();
+      window.addEventListener('mousemove', onInt);
+      window.addEventListener('touchstart', onInt);
+      // Ao clicar, garante visibilidade
+      window.addEventListener('click', onInt);
+      
+      return () => {
+          window.removeEventListener('mousemove', onInt);
+          window.removeEventListener('touchstart', onInt);
+          window.removeEventListener('click', onInt);
+          if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+          if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current);
+      };
+  }, [playing, isLocked, showSidePanel]);
 
+  // --- DATA LOADING & SKIP LOGIC ---
   useEffect(() => {
     const loadData = async () => {
         if (type === 'tv' && season && tmdbId) {
             try {
                 const eps = await tmdb.getTVSeason(String(tmdbId), season);
                 setSeasonEpisodes(eps);
+                const current = eps.find(e => e.episode_number === episode);
+                if (current) setCurrentEpisodeData(current);
             } catch(e) {}
         }
     };
     loadData();
-  }, [tmdbId, type, season]);
+  }, [tmdbId, type, season, episode]);
 
+  const checkSkipLogic = (time: number) => {
+      let showIntro = false;
+      let showRecap = false;
+      let target = 0;
+
+      if (currentEpisodeData) {
+          // Lógica baseada em dados da API (Prioridade)
+          if (currentEpisodeData.opening_credits_start_time && currentEpisodeData.opening_credits_end_time) {
+              if (time >= currentEpisodeData.opening_credits_start_time && time < currentEpisodeData.opening_credits_end_time) {
+                  showIntro = true;
+                  target = currentEpisodeData.opening_credits_end_time;
+              }
+          } else {
+              // Fallback manual se não tiver dados
+              if (time > 35 && time < 280) showIntro = true; 
+              target = time + 85; // Pula 85s por padrão
+          }
+
+          if (currentEpisodeData.recap_start_time && currentEpisodeData.recap_end_time) {
+              if (time >= currentEpisodeData.recap_start_time && time < currentEpisodeData.recap_end_time) {
+                  showRecap = true;
+                  target = currentEpisodeData.recap_end_time;
+              }
+          }
+      } else {
+          // Fallback Genérico para Filmes/Séries sem dados
+          if (time > 35 && time < 280) {
+              showIntro = true;
+              target = time + 85;
+          }
+      }
+
+      setShowSkipIntro(showIntro);
+      setShowSkipRecap(showRecap);
+      if (showIntro || showRecap) setSkipTimeTarget(target);
+  };
+
+  // --- VIDEO SETUP ---
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -177,12 +217,13 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
         try { if(window.Android?.onVideoPlaying) window.Android.onVideoPlaying(src); } catch(e){}
     };
     const onPause = () => setPlaying(false);
+    
     const onTimeUpdate = () => {
         setCurrentTime(video.currentTime);
         setDuration(video.duration || 0);
-        // Show Skip Intro for first 5 mins
-        setShowSkipIntro(video.currentTime > 30 && video.currentTime < 300);
+        checkSkipLogic(video.currentTime); // Check skip every update
     };
+    
     const onLoadedMetadata = () => {
         setDuration(video.duration);
         attemptResume();
@@ -219,30 +260,12 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       return () => clearInterval(interval);
   }, [playing, profileId, tmdbId]);
 
-  // Controls Visibility
-  const showControlsTemporarily = () => {
-      setShowControls(true);
-      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-      if (!isLocked && playing && !showSidePanel) {
-          controlsTimeoutRef.current = window.setTimeout(() => setShowControls(false), 3500);
-      }
-  };
-
-  useEffect(() => {
-      showControlsTemporarily();
-      const onInt = () => showControlsTemporarily();
-      window.addEventListener('mousemove', onInt);
-      window.addEventListener('touchstart', onInt);
-      return () => {
-          window.removeEventListener('mousemove', onInt);
-          window.removeEventListener('touchstart', onInt);
-          if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-      };
-  }, [playing, isLocked, showSidePanel]);
-
-  // Gestures
   const handleTouchStart = (e: React.TouchEvent) => {
-      if (isLocked) return;
+      if (isLocked) {
+          // Apenas mostra o botão de desbloqueio e reseta o timer
+          showControlsTemporarily();
+          return;
+      }
       touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
   };
 
@@ -251,7 +274,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       const dx = e.touches[0].clientX - touchStartRef.current.x;
       const dy = e.touches[0].clientY - touchStartRef.current.y;
       
-      // Vertical Gesture (Vol/Bright)
       if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
           const delta = dy / window.innerHeight;
           if (touchStartRef.current.x < window.innerWidth / 2) {
@@ -278,12 +300,52 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           showControlsTemporarily();
       }
   };
+  
+  const performSkip = () => {
+      if (videoRef.current && skipTimeTarget > 0) {
+          // Se for fallback, apenas soma, se for API, vai pro target exato
+          if (skipTimeTarget < 1000) { // Assumindo timestamp
+             videoRef.current.currentTime = skipTimeTarget;
+          } else {
+             // Fallback logic protection if needed
+             videoRef.current.currentTime += 85; 
+          }
+          showControlsTemporarily();
+      } else {
+          seek(85); // Hard fallback
+      }
+  };
 
   const formatTime = (t: number) => {
       if (!t) return "0:00";
       const m = Math.floor((t % 3600) / 60);
       const s = Math.floor(t % 60);
+      const h = Math.floor(t / 3600);
+      if (h > 0) return `${h}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
       return `${m}:${s.toString().padStart(2,'0')}`;
+  };
+
+  // Actions
+  const handleDownload = () => {
+    if (isDownloading) return;
+    setIsDownloading(true);
+    const meta = JSON.stringify({ id: String(tmdbId || 0), title: title, type: type, season: season, episode: episode });
+    if (window.Android?.download) { window.Android.download(src, meta); setTimeout(onClose, 1000); }
+    else { setIsDownloading(false); alert("Download disponível no App Android"); }
+  };
+
+  const handleCast = () => {
+      if (window.Android?.castVideo) window.Android.castVideo(src, title);
+      else alert("Transmitir disponível no App Android");
+  };
+
+  const toggleFullscreen = () => {
+      if (!document.fullscreenElement) {
+          containerRef.current?.requestFullscreen().catch(console.log);
+          if (window.Android?.setOrientation) window.Android.setOrientation('landscape');
+      } else {
+          document.exitFullscreen();
+      }
   };
 
   return (
@@ -295,17 +357,17 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     >
         <video ref={videoRef} className={`w-full h-full object-${fitMode} transition-all duration-300`} playsInline />
 
-        {/* LOADING STATE REFINED */}
+        {/* LOADING */}
         {isLoading && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 bg-black/40 backdrop-blur-sm animate-fade-in">
                  <div className="flex flex-col items-center gap-4">
                      <div className="w-16 h-16 border-4 border-white/10 border-t-primary rounded-full animate-spin shadow-[0_0_30px_rgba(242,13,242,0.4)]"></div>
-                     <p className="text-white/60 text-xs font-bold tracking-[0.2em] animate-pulse">CARREGANDO BUFFER</p>
+                     <p className="text-white/60 text-xs font-bold tracking-[0.2em] animate-pulse">CARREGANDO</p>
                  </div>
             </div>
         )}
 
-        {/* GESTURE INDICATOR (IOS STYLE) */}
+        {/* GESTURE INDICATOR */}
         {gestureIndicator && (
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/60 backdrop-blur-xl rounded-3xl p-8 flex flex-col items-center gap-6 animate-fade-in z-50 border border-white/10 shadow-2xl">
                 <span className="material-symbols-rounded text-5xl text-white drop-shadow-md">
@@ -318,14 +380,24 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
         )}
 
         {/* SKIP INTRO BUTTON */}
-        {showSkipIntro && !isLocked && (
+        {(showSkipIntro || showSkipRecap) && !isLocked && (
             <button 
-                onClick={(e) => { e.stopPropagation(); seek(85); }}
+                onClick={(e) => { e.stopPropagation(); performSkip(); }}
                 className="absolute bottom-32 right-6 z-50 bg-white text-black px-6 py-3 rounded-xl font-bold text-sm flex items-center gap-2 shadow-xl hover:scale-105 active:scale-95 transition-all animate-slide-up group"
             >
                 <div className="w-0 group-hover:w-4 transition-all overflow-hidden flex items-center"><span className="material-symbols-rounded text-lg">fast_forward</span></div>
-                Pular Abertura
+                {showSkipRecap ? 'Pular Recapitulação' : 'Pular Abertura'}
             </button>
+        )}
+
+        {/* LOCKED OVERLAY (Só aparece quando showUnlockButton é true) */}
+        {isLocked && (
+             <div className={`absolute top-12 left-1/2 -translate-x-1/2 z-50 transition-opacity duration-300 ${showUnlockButton ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
+                 <button onClick={() => setIsLocked(false)} className="bg-white/10 backdrop-blur-md border border-white/20 px-8 py-3 rounded-full flex items-center gap-3 shadow-2xl hover:bg-white/20 transition-colors">
+                     <span className="material-symbols-rounded text-white fill-1">lock</span>
+                     <span className="text-white text-xs font-bold uppercase tracking-wider">Toque para Desbloquear</span>
+                 </button>
+             </div>
         )}
 
         {/* CONTROLS UI */}
@@ -350,7 +422,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                         </button>
                         <button onClick={() => setShowSidePanel(true)} className="w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 flex items-center justify-center transition-all backdrop-blur-md relative">
                              <span className="material-symbols-rounded">playlist_play</span>
-                             <div className="absolute top-3 right-3 w-2 h-2 bg-primary rounded-full animate-pulse"></div>
                         </button>
                         <button onClick={() => setIsLocked(true)} className="w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 flex items-center justify-center transition-all backdrop-blur-md">
                              <span className="material-symbols-rounded">lock_open</span>
@@ -375,13 +446,10 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                      </div>
                 </div>
 
-                {/* BOTTOM FLOATING BAR (Refined Design) */}
+                {/* BOTTOM FLOATING BAR */}
                 <div className="p-4 md:p-8 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
                      <div className="bg-[#0f0f0f]/80 backdrop-blur-2xl border border-white/10 rounded-3xl p-5 shadow-2xl max-w-5xl mx-auto w-full relative overflow-hidden">
                          
-                         {/* Shine Effect */}
-                         <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
-
                          {/* TIME SLIDER */}
                          <div className="flex items-center gap-4 mb-4 text-xs font-bold text-white/70 font-mono">
                              <span>{formatTime(currentTime)}</span>
@@ -393,9 +461,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                                     className="absolute inset-0 w-full h-full opacity-0 z-20 cursor-pointer" 
                                  />
                                  <div className="w-full h-full bg-white/10 rounded-full overflow-hidden">
-                                     {/* Buffer Bar (Simulated) */}
-                                     <div className="h-full bg-white/10 w-[60%] absolute top-0 left-0"></div>
-                                     
                                      <div className="h-full bg-gradient-to-r from-primary to-purple-500 relative transition-all shadow-[0_0_15px_#f20df2]" style={{ width: `${(currentTime / duration) * 100}%` }}>
                                          <div className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg scale-0 group-hover:scale-100 transition-transform border-2 border-primary"></div>
                                      </div>
@@ -439,14 +504,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                      </div>
                 </div>
             </div>
-        )}
-
-        {/* LOCKED OVERLAY */}
-        {isLocked && (
-             <button onClick={() => setIsLocked(false)} className="absolute top-12 left-1/2 -translate-x-1/2 bg-white/10 backdrop-blur-md border border-white/20 px-8 py-3 rounded-full flex items-center gap-3 z-50 animate-pulse pointer-events-auto shadow-2xl hover:bg-white/20 transition-colors">
-                 <span className="material-symbols-rounded text-white fill-1">lock</span>
-                 <span className="text-white text-xs font-bold uppercase tracking-wider">Toque para Desbloquear</span>
-             </button>
         )}
         
         {/* SIDE PANEL (Episodes) */}

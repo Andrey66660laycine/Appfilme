@@ -17,6 +17,10 @@ export interface MovieDetails extends Movie {
   tagline: string;
   status: string;
   imdb_id: string;
+  // Campos de tempo para filmes
+  opening_credits_start_time?: number;
+  opening_credits_end_time?: number;
+  end_credits_start_time?: number;
 }
 
 export interface Series extends Movie {
@@ -51,6 +55,12 @@ export interface Episode {
   air_date: string;
   episode_number: number;
   runtime: number;
+  // Campos de tempo da API TMDB
+  opening_credits_start_time?: number;
+  opening_credits_end_time?: number;
+  recap_start_time?: number;
+  recap_end_time?: number;
+  end_credits_start_time?: number;
 }
 
 export interface CastMember {

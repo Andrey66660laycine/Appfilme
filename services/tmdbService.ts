@@ -93,7 +93,7 @@ export const tmdb = {
               const releaseDate = item.release_date || item.first_air_date;
               if (!releaseDate) return false;
               const dateObj = new Date(releaseDate);
-              const year = parseInt(releaseDate.split('-')[0]) : 0;
+              const year = parseInt(releaseDate.split('-')[0]) || 0;
               
               // Verifica se está no futuro distante (acima de 2025)
               if (dateObj > MAX_SAFE_DATE) return false;

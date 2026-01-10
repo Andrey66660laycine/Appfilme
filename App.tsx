@@ -1,5 +1,4 @@
 
-
 import React, { useEffect, useState, useRef, createContext, useContext } from 'react';
 import Home from './pages/Home';
 import Search from './pages/Search';
@@ -129,6 +128,20 @@ const App: React.FC = () => {
     };
   }, []);
 
+  // --- APP DOWNLOAD MODAL CHECK ---
+  useEffect(() => {
+    const isNativeApp = !!window.Android;
+    if (!showSplash && session && currentProfile && !isNativeApp) {
+        const hasInstalled = localStorage.getItem('void_app_installed');
+        if (hasInstalled !== 'true') {
+            const timer = setTimeout(() => {
+                setShowAppModal(true);
+            }, 3000);
+            return () => clearTimeout(timer);
+        }
+    }
+  }, [showSplash, session, currentProfile]);
+
   // --- AUTH CHECK ---
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -242,7 +255,8 @@ const App: React.FC = () => {
   
   const handleCloseAppModal = (dontShowAgain: boolean) => {
     if (dontShowAgain) {
-      localStorage.setItem('void_hide_app_modal', 'true');
+      // CORREÇÃO: Usando a mesma chave que é verificada no useEffect
+      localStorage.setItem('void_app_installed', 'true');
     }
     setShowAppModal(false);
   };
@@ -445,7 +459,7 @@ const App: React.FC = () => {
                       <p className="text-white/70 text-sm leading-relaxed mb-6">Se falhar, troque o servidor.</p>
                       <button onClick={handleConfirmNotice} className="w-full bg-white text-black font-bold py-3.5 rounded-xl hover:bg-gray-200 transition-all mb-4">Entendi, Vamos Assistir</button>
                       <div className="flex items-center justify-center gap-2 cursor-pointer group" onClick={() => setDontShowNoticeAgain(!dontShowNoticeAgain)}>
-                          <div className={`w-5 h-5 rounded border border-white/30 flex items-center justify-center transition-colors ${dontShowAgain ? 'bg-primary border-primary' : 'bg-transparent'}`}>
+                          <div className={`w-5 h-5 rounded border border-white/30 flex items-center justify-center transition-colors ${dontShowNoticeAgain ? 'bg-primary border-primary' : 'bg-transparent'}`}>
                               {dontShowNoticeAgain && <span className="material-symbols-rounded text-white text-sm">check</span>}
                           </div>
                           <span className="text-xs text-white/50 group-hover:text-white/80 transition-colors">Não mostrar novamente</span>

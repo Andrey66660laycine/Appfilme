@@ -119,8 +119,12 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
   const handleRemoveFromHistory = async (e: React.MouseEvent, item: WatchHistoryItem) => {
       e.stopPropagation();
       if (!currentProfile) return;
-      await storageService.removeFromHistory(currentProfile.id, item.id, item.type);
-      refreshHistory();
+      // CORREÇÃO: Garante que estamos passando um número para o storageService
+      const matchId = Number(item.tmdb_id || item.id);
+      if (!isNaN(matchId)) {
+          await storageService.removeFromHistory(currentProfile.id, matchId, item.type);
+          refreshHistory();
+      }
   };
 
   const toggleMyList = async () => {

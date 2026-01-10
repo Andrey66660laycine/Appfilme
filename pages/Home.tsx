@@ -30,8 +30,11 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
       const history = await storageService.getHistory(currentProfile.id);
       
       const continueWatching = history.filter(item => {
-          if (!item.duration || item.duration === 0) return true;
-          const pct = (item.progress / item.duration);
+          const duration = item.duration || 0;
+          const progress = item.progress || 0;
+
+          if (duration === 0) return true;
+          const pct = progress / duration;
           return pct < 0.95 && pct > 0.02; // Filtra terminados e iniciados acidentalmente
       });
 
@@ -260,7 +263,9 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
 
                 <div className="flex overflow-x-auto gap-4 pb-8 pr-4 hide-scrollbar snap-x cursor-grab active:cursor-grabbing">
                     {watchHistory.map((item) => {
-                        const percent = (item.duration || 0) > 0 ? ((item.progress || 0) / (item.duration || 1)) * 100 : 0;
+                        const duration = item.duration || 0;
+                        const progress = item.progress || 0;
+                        const percent = duration > 0 ? (progress / duration) * 100 : 0;
                         return (
                           <div key={`${item.id}-${item.timestamp}`} onClick={() => handleHistoryClick(item)} className="flex-none w-[260px] md:w-[300px] snap-start group relative cursor-pointer">
                               {/* Close Button */}
@@ -284,7 +289,7 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
 
                                   {/* Remaining Time Badge */}
                                   <div className="absolute bottom-3 right-3 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[9px] font-bold text-white/90 border border-white/10">
-                                      {Math.round(((item.duration || 0) - (item.progress || 0)) / 60)} min rest.
+                                      {Math.round((duration - progress) / 60)} min rest.
                                   </div>
                               </div>
 
@@ -293,7 +298,7 @@ const Home: React.FC<HomeProps> = ({ onMovieClick, onPlayVideo }) => {
                                   {item.type === 'tv' && (
                                       <div className="flex items-center gap-2 mt-1">
                                           <span className="text-[10px] font-bold text-black bg-white px-1.5 rounded uppercase tracking-wide">S{item.season} E{item.episode}</span>
-                                          <span className="text-[10px] text-white/40">Continuar de {Math.floor((item.progress || 0) / 60)}m</span>
+                                          <span className="text-[10px] text-white/40">Continuar de {Math.floor(progress / 60)}m</span>
                                       </div>
                                   )}
                                   {item.type === 'movie' && <span className="text-[10px] text-white/40 mt-1 block">Filme • {Math.floor(percent)}% Completo</span>}

@@ -166,8 +166,8 @@ export const storageService = {
           const history = await storageService.getHistory(profileId);
           // Pega o item mais recente desse ID
           const item = history.find(h => h.tmdb_id === id && h.type === type);
-          if (item && item.duration > 0) {
-              return (item.progress / item.duration) * 100;
+          if (item && (item.duration || 0) > 0) {
+              return ((item.progress || 0) / (item.duration || 1)) * 100;
           }
           return 0;
       } catch { return 0; }

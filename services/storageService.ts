@@ -16,7 +16,7 @@ export const storageService = {
       } catch { return null; }
   },
 
-  // --- PROFILES (Mantém no Supabase para auth, mas com fallback se necessário) ---
+  // --- PROFILES ---
   getProfiles: async (): Promise<Profile[]> => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -44,16 +44,15 @@ export const storageService = {
   },
 
   deleteAccountData: async () => {
-      // Implementação simplificada
       return true;
   },
 
   updateWatchStats: async () => {},
 
-  // --- HISTORY & PROGRESS (LOCALSTORAGE TOTAL) ---
+  // --- HISTORY & PROGRESS (INTELLIGENT) ---
 
   addToHistory: async (profileId: string, item: any): Promise<void> => {
-      // Wrapper para compatibilidade, o updateProgress faz o trabalho pesado agora
+      // Wrapper para compatibilidade
       storageService.updateProgress(profileId, item.id, item.type, item.progress || 0, item.duration || 0, item.season, item.episode, item);
   },
 
@@ -61,7 +60,7 @@ export const storageService = {
       try {
           const raw = localStorage.getItem(`${HISTORY_KEY}_${profileId}`);
           if (!raw) return [];
-          const history: any[] = JSON.parse(raw);
+          const history: WatchHistoryItem[] = JSON.parse(raw);
           
           // Ordena pelo timestamp (mais recente primeiro)
           return history.sort((a, b) => b.timestamp - a.timestamp);
@@ -71,10 +70,54 @@ export const storageService = {
       }
   },
 
+  // Nova função para pegar histórico "inteligente" para a Home
+  getSmartContinueWatching: async (profileId: string): Promise<WatchHistoryItem[]> => {
+      try {
+          const allHistory = await storageService.getHistory(profileId);
+          
+          // 1. Filtra itens inválidos ou terminados
+          const validItems = allHistory.filter(item => {
+               const duration = item.duration || 0;
+               const progress = item.progress || 0;
+               
+               // Se não tem duração registrada (ex: iframe player que falhou), ou progresso < 30s, ignora
+               if (duration === 0 || progress < 30) return false;
+
+               // Se já viu mais de 95%, considera terminado e remove da lista "Continuar"
+               const percentage = progress / duration;
+               if (percentage > 0.95) return false;
+
+               return true;
+          });
+
+          // 2. Agrupa Séries (Deduplicação)
+          // Se tiver ep 1, ep 2 e ep 3 da mesma série, mostra só o mais recente (Ep 3)
+          const uniqueMap = new Map();
+          
+          validItems.forEach(item => {
+              // Chave única: Filmes usam ID, Séries usam ID da Série (remove season/ep da chave)
+              const key = item.type === 'movie' ? `movie-${item.tmdb_id}` : `tv-${item.tmdb_id}`;
+              
+              if (!uniqueMap.has(key)) {
+                  uniqueMap.set(key, item);
+              } else {
+                  // Se já existe, verifica qual é mais recente
+                  const existing = uniqueMap.get(key);
+                  if (item.timestamp > existing.timestamp) {
+                      uniqueMap.set(key, item);
+                  }
+              }
+          });
+
+          return Array.from(uniqueMap.values());
+      } catch (e) {
+          return [];
+      }
+  },
+
   getSeriesHistory: async (profileId: string, tmdbId: number): Promise<WatchHistoryItem[]> => {
       try {
           const allHistory = await storageService.getHistory(profileId);
-          // Filtra apenas itens dessa série específica
           return allHistory.filter(h => h.tmdb_id === tmdbId && h.type === 'tv');
       } catch { return []; }
   },
@@ -82,6 +125,7 @@ export const storageService = {
   removeFromHistory: async (profileId: string, tmdbId: number, type: 'movie' | 'tv'): Promise<boolean> => {
       try {
           const allHistory = await storageService.getHistory(profileId);
+          // Remove todos os registros desse ID (para séries, remove todos episódios)
           const newHistory = allHistory.filter(h => !(h.tmdb_id === tmdbId && h.type === type));
           localStorage.setItem(`${HISTORY_KEY}_${profileId}`, JSON.stringify(newHistory));
           return true;
@@ -94,13 +138,14 @@ export const storageService = {
           const raw = localStorage.getItem(key);
           let history: any[] = raw ? JSON.parse(raw) : [];
 
+          // Encontra índice exato (para update)
           const existingIndex = history.findIndex(h => {
               if (type === 'movie') return h.tmdb_id === tmdbId && h.type === 'movie';
               return h.tmdb_id === tmdbId && h.type === 'tv' && h.season === season && h.episode === episode;
           });
 
           const newItem = {
-              id: String(tmdbId), // ID único
+              id: String(tmdbId), 
               tmdb_id: tmdbId,
               type,
               season: season || 0,
@@ -108,7 +153,6 @@ export const storageService = {
               progress,
               duration,
               timestamp: Date.now(),
-              // Preserva metadados se existirem, ou usa os novos
               title: extraData?.title || (existingIndex > -1 ? history[existingIndex].title : ''),
               poster_path: extraData?.poster_path || (existingIndex > -1 ? history[existingIndex].poster_path : ''),
               backdrop_path: extraData?.backdrop_path || (existingIndex > -1 ? history[existingIndex].backdrop_path : ''),
@@ -119,6 +163,11 @@ export const storageService = {
               history[existingIndex] = newItem;
           } else {
               history.push(newItem);
+          }
+          
+          // Limita o histórico local a 100 itens para não estourar storage
+          if (history.length > 100) {
+              history = history.sort((a, b) => b.timestamp - a.timestamp).slice(0, 100);
           }
 
           localStorage.setItem(key, JSON.stringify(history));

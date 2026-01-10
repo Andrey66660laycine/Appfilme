@@ -149,7 +149,11 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
 
     setIsLoading(true);
     
-    if (src.includes('.m3u8')) {
+    // DETECÇÃO AVANÇADA DE HLS
+    // Suporta .m3u8, .txt (usado em alguns servidores) e padrão /hls/
+    const isHls = src.includes('.m3u8') || src.includes('.txt') || src.includes('/hls/');
+
+    if (isHls) {
         video.crossOrigin = "anonymous"; 
         if (window.Hls && window.Hls.isSupported()) {
             const hls = new window.Hls({ enableWorker: true, lowLatencyMode: true });
@@ -174,6 +178,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
             });
         }
     } else {
+        // MP4 / MKV direto
         video.src = src;
         video.load();
     }

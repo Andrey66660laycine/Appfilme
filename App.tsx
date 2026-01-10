@@ -98,25 +98,56 @@ const App: React.FC = () => {
       return () => window.removeEventListener('achievement_unlocked', handleUnlock);
   }, []);
 
-  // --- NATIVE BRIDGE FIX (CRÍTICO: Receber URL do Sniffer) ---
+  // --- NATIVE BRIDGE & SNIFFER FILTER (CRÍTICO) ---
   useEffect(() => {
-    // Essa função é chamada pelo Android (Java/Kotlin) quando o sniffer acha o vídeo
+    // Lista negra de URLs (Anúncios, Trackers, Imagens disfarçadas)
+    const AD_KEYWORDS = [
+        'doubleclick', 'googleads', 'googlesyndication', 'facebook', 'analytics', 
+        'pixel', 'tracker', 'adsystem', 'ads.', 'banner', 'pop', 'juicyads', 
+        'exoclick', 'propeller', 'favicon', '.png', '.jpg', '.svg', '.gif', '.css', '.js'
+    ];
+
+    // Extensões de vídeo válidas e Padrões de Streaming
+    const VIDEO_PATTERNS = [
+        /\.mp4($|\?)/i, 
+        /\.mkv($|\?)/i, 
+        /\.avi($|\?)/i, 
+        /\.m3u8($|\?)/i, 
+        /\.mpd($|\?)/i,
+        /master\.txt/i, // Suporte para embedplayer1.xyz
+        /\/hls\//i,     // Padrão genérico de HLS
+        /video\/mp4/i
+    ];
+
     window.receberVideo = (url: string) => {
-        console.log("Vídeo sniffado:", url);
+        if (!url) return;
         
-        if (url && (url.startsWith('http') || url.startsWith('blob'))) {
-            // Força o player nativo a aparecer com a URL capturada
-            setNativeVideoUrl(url);
+        const lowerUrl = url.toLowerCase();
+
+        // 1. Filtragem de Anúncios (Negação)
+        if (AD_KEYWORDS.some(keyword => lowerUrl.includes(keyword))) {
+            console.log("🚫 Link ignorado (Anúncio/Lixo):", url);
+            return;
+        }
+
+        // 2. Validação de Vídeo (Aceitação)
+        // Aceita se tiver extensão válida OU se o sniffer nativo disse que é vídeo (blob)
+        const isValidVideo = VIDEO_PATTERNS.some(regex => regex.test(url)) || url.startsWith('blob:');
+
+        if (isValidVideo) {
+            console.log("✅ VÍDEO VÁLIDO DETECTADO:", url);
             
-            // Oculta o iframe/embed para economizar recurso e evitar som duplo
-            setIsIframeLoaded(false); 
+            // Lógica para evitar loops ou reloads desnecessários
+            setNativeVideoUrl(prev => {
+                if (prev === url) return prev; // Não atualiza se for o mesmo
+                return url;
+            });
             
-            // Se o playerState não estiver definido (caso raro), tenta definir algo básico
-            // mas geralmente o playerState já está lá porque o usuário clicou no filme
+            setIsIframeLoaded(false); // Oculta embed
+        } else {
+            console.log("⚠️ Link suspeito ignorado:", url);
         }
     };
-
-    // Cleanup não é necessário pois queremos que a função persista
   }, []);
 
   // --- APP DOWNLOAD MODAL CHECK ---
@@ -325,7 +356,7 @@ const App: React.FC = () => {
 
   const startVideoPlayer = async (config: PlayerState) => {
     setIsIframeLoaded(false);
-    setNativeVideoUrl(null); // Reseta URL nativa ao abrir novo player
+    setNativeVideoUrl(null); 
     setFailedUrls(new Set()); 
     setIsPlayerStable(false);
     setPendingPlayerState(null);
@@ -554,8 +585,7 @@ const App: React.FC = () => {
           </div>
       )}
 
-      {/* --- PLAYER NATIVO (Alta Prioridade) --- */}
-      {/* Se nativeVideoUrl existir (veio do sniffer), mostramos o CustomVideoPlayer */}
+      {/* --- PLAYER NATIVO (Alta Prioridade com Suporte a .txt/.m3u8/.mp4) --- */}
       {nativeVideoUrl && playerState && currentProfile && (
         <CustomVideoPlayer 
             src={nativeVideoUrl}
@@ -575,7 +605,6 @@ const App: React.FC = () => {
       )}
 
       {/* --- PLAYER EMBED (Fallback) --- */}
-      {/* Mostra o iframe apenas se não tiver URL nativa ainda e não tiver anúncio */}
       {playerState && !nativeVideoUrl && !showAds && !showServerNotice && (
         <div className="fixed inset-0 z-[100] bg-black animate-fade-in flex flex-col overflow-hidden">
             
@@ -594,7 +623,7 @@ const App: React.FC = () => {
                             <span className="text-xs uppercase tracking-[0.2em] text-primary font-bold">Conectando</span>
                         </div>
                         <p className="text-white/30 text-[10px] uppercase tracking-widest mt-2 animate-pulse">
-                            Aguardando sinal do servidor...
+                            Buscando melhor fonte de vídeo...
                         </p>
                     </div>
                 </div>

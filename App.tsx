@@ -29,7 +29,7 @@ interface PlayerState {
   episode?: number;
   title?: string; 
   backdrop?: string;
-  initialTime?: number; // Added to resume playback
+  initialTime?: number; 
 }
 
 interface NextEpisodeInfo {
@@ -59,18 +59,16 @@ const App: React.FC = () => {
   const [showAds, setShowAds] = useState(false);
   const [adTimer, setAdTimer] = useState(15);
   
-  // MUDANÇA: Padrão agora é 'superflix' (Servidor 2)
+  // Padrão 'superflix'
   const [activeServer, setActiveServer] = useState<'playerflix' | 'superflix'>('superflix');
   const [videoFoundOverlay, setVideoFoundOverlay] = useState(false);
 
-  const [achievementToast, setAchievementToast] = useState<{ visible: boolean; id: string }>({ visible: false, id: '' });
   const [welcomeBackToast, setWelcomeBackToast] = useState<{ visible: boolean; item: any }>({ visible: false, item: null });
   
   const searchInputRef = useRef<HTMLInputElement>(null);
   const adContainerRef = useRef<HTMLDivElement>(null);
   const loaderTimeoutRef = useRef<number | null>(null);
 
-  // --- SMART REMINDER (Welcome Back) ---
   useEffect(() => {
       const checkLastWatch = async () => {
           if (!currentProfile) return;
@@ -90,47 +88,32 @@ const App: React.FC = () => {
       if (currentProfile && !playerState) checkLastWatch();
   }, [currentProfile]);
 
-  // --- HELPER: VERIFICAR DURAÇÃO (ANTI-TRAILER/ADS) ---
   const validateVideoDuration = (url: string): Promise<boolean> => {
       return new Promise((resolve) => {
-          // Se for blob ou extensão exótica, aprova direto
           if (url.startsWith('blob:')) { resolve(true); return; }
-
           const tempVideo = document.createElement('video');
           tempVideo.preload = 'metadata';
           tempVideo.muted = true;
-          
           const timeout = setTimeout(() => {
-              // Se demorar muito para carregar metadados, assume que é válido (evita bloquear conteúdo real lento)
               tempVideo.src = "";
               resolve(true);
           }, 3000);
-
           tempVideo.onloadedmetadata = () => {
               clearTimeout(timeout);
               const duration = tempVideo.duration;
-              tempVideo.src = ""; // Limpa memória
-              
-              // Se a duração for válida e MENOR que 300 segundos (5 min), rejeita.
+              tempVideo.src = ""; 
               if (duration && !isNaN(duration) && duration < 300) {
-                  console.warn(`⚠️ Sniffer: Vídeo ignorado (Muito curto: ${duration.toFixed(0)}s) - ${url}`);
+                  console.warn(`⚠️ Sniffer: Vídeo curto ignorado (${duration.toFixed(0)}s)`);
                   resolve(false);
               } else {
                   resolve(true);
               }
           };
-
-          tempVideo.onerror = () => {
-              clearTimeout(timeout);
-              // Se der erro (ex: CORS), aprovamos para não bloquear falso negativo
-              resolve(true); 
-          };
-
+          tempVideo.onerror = () => { clearTimeout(timeout); resolve(true); };
           tempVideo.src = url;
       });
   };
 
-  // --- NATIVE BRIDGE ---
   useEffect(() => {
     const VIDEO_PATTERNS = [/\.mp4($|\?)/i, /\.mkv($|\?)/i, /\.avi($|\?)/i, /\.m3u8($|\?)/i, /\.mpd($|\?)/i, /master\.txt/i, /\/hls\//i, /video\/mp4/i];
     const AD_KEYWORDS = ['doubleclick', 'googleads', 'googlesyndication', 'facebook', 'analytics', 'pixel', 'tracker', 'adsystem', 'banner', 'pop', 'juicyads'];
@@ -143,14 +126,10 @@ const App: React.FC = () => {
         const isValidPattern = VIDEO_PATTERNS.some(regex => regex.test(url)) || url.startsWith('blob:');
 
         if (isValidPattern) {
-            // VERIFICAÇÃO DE DURAÇÃO (NOVO)
             const isLongEnough = await validateVideoDuration(url);
-            
-            if (!isLongEnough) {
-                return; // Aborta se for curto demais
-            }
+            if (!isLongEnough) return; 
 
-            console.log("✅ VÍDEO VÁLIDO DETECTADO:", url);
+            console.log("✅ VÍDEO VÁLIDO:", url);
             setNativeVideoUrl(prev => {
                 if (prev === url) return prev;
                 setVideoFoundOverlay(true);
@@ -165,21 +144,17 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // --- APP DOWNLOAD MODAL CHECK ---
   useEffect(() => {
     const isNativeApp = !!window.Android;
     if (!showSplash && session && currentProfile && !isNativeApp) {
         const hasInstalled = localStorage.getItem('void_app_installed');
         if (hasInstalled !== 'true') {
-            const timer = setTimeout(() => {
-                setShowAppModal(true);
-            }, 3000);
+            const timer = setTimeout(() => { setShowAppModal(true); }, 3000);
             return () => clearTimeout(timer);
         }
     }
   }, [showSplash, session, currentProfile]);
 
-  // --- AUTH CHECK ---
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -192,14 +167,12 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // --- ROUTING ---
   useEffect(() => {
     const handleHashChange = () => setHash(window.location.hash);
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // --- BROWSER BACK BUTTON ---
   useEffect(() => {
     if (playerState) {
       window.history.pushState({ playerOpen: true }, "");
@@ -212,7 +185,6 @@ const App: React.FC = () => {
     }
   }, [playerState]);
 
-  // --- SCROLL ---
   useEffect(() => {
     const navbar = document.getElementById('navbar');
     const handleScroll = () => {
@@ -230,15 +202,13 @@ const App: React.FC = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // --- NEXT EPISODE & RECS ---
   useEffect(() => {
     if (playerState) {
         const fetchPlayerExtras = async () => {
             if (playerState.type === 'tv' && playerState.tmdbId && playerState.season && playerState.episode) {
                 try {
-                    const seriesDetails = await tmdb.getTVDetails(String(playerState.tmdbId));
                     const seasonEpisodes = await tmdb.getTVSeason(String(playerState.tmdbId), playerState.season);
-                    if (seriesDetails && seasonEpisodes) {
+                    if (seasonEpisodes) {
                         const currentSeasonEpisodesCount = seasonEpisodes.length;
                         if (playerState.episode < currentSeasonEpisodesCount) {
                             setNextEpisode({
@@ -269,14 +239,12 @@ const App: React.FC = () => {
     }
   }, [playerState]);
 
-  // --- ADS ---
   useEffect(() => {
       if (showAds && adContainerRef.current) {
           setAdTimer(15);
           const timerInterval = setInterval(() => {
               setAdTimer(prev => prev > 0 ? prev - 1 : 0);
           }, 1000);
-          // Ad Injection Logic (simplified for brevity, keep original injection here)
           return () => clearInterval(timerInterval);
       }
   }, [showAds]);
@@ -291,10 +259,7 @@ const App: React.FC = () => {
   };
   
   const handleCloseAppModal = (dontShowAgain: boolean) => {
-    if (dontShowAgain) {
-      // CORREÇÃO: Usando a mesma chave que é verificada no useEffect
-      localStorage.setItem('void_app_installed', 'true');
-    }
+    if (dontShowAgain) localStorage.setItem('void_app_installed', 'true');
     setShowAppModal(false);
   };
 
@@ -311,19 +276,19 @@ const App: React.FC = () => {
     setFailedUrls(new Set()); 
     setIsPlayerStable(false);
     setPendingPlayerState(null);
-    setActiveServer('superflix'); // RESETA SEMPRE PARA O MELHOR (SERVER 2)
+    setActiveServer('superflix'); 
 
     if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
-    loaderTimeoutRef.current = window.setTimeout(() => { setIsIframeLoaded(true); }, 7000);
+    // Tempo aumentado para garantir que o loader bonito fique na tela
+    loaderTimeoutRef.current = window.setTimeout(() => { setIsIframeLoaded(true); }, 5000);
 
     setPlayerState(config);
 
-    // Save initial history entry (0 progress)
     if (currentProfile && config.tmdbId) {
         try {
             let details: any = null;
             if (config.type === 'movie') details = await tmdb.getMovieDetails(String(config.tmdbId));
-            else details = await tmdb.getTVDetails(String(config.tmdbId)); // Use ID directly if string, or config.id
+            else details = await tmdb.getTVDetails(String(config.tmdbId));
 
             if (details) {
                 setPlayerState(prev => prev ? ({
@@ -342,7 +307,7 @@ const App: React.FC = () => {
                     vote_average: details.vote_average,
                     season: config.season,
                     episode: config.episode,
-                    progress: config.initialTime || 0, // IMPORTANT: Save initial time if continuing
+                    progress: config.initialTime || 0,
                     duration: 0
                 });
             }
@@ -362,10 +327,8 @@ const App: React.FC = () => {
       }
   };
   
-  // Chamado quando o usuário clica num card relacionado ou episódio no menu lateral
   const handlePlayRelated = (movie: Movie) => {
       setIsPlayerStable(false);
-      // Se for um episódio (simulado como Movie object), tratamos aqui
       if (playerState?.type === 'tv' && (movie as any).episode_number) {
            const epNumber = (movie as any).episode_number;
            startVideoPlayer({
@@ -381,15 +344,15 @@ const App: React.FC = () => {
   const handlePlayRequest = (config: PlayerState) => {
       if (!currentProfile) return;
       setPendingPlayerState(config);
-      const skipNotice = localStorage.getItem('void_skip_server_notice');
-      if (skipNotice === 'true') setShowAds(true);
-      else setShowServerNotice(true);
+      // Pular avisos antigos e ir direto pro player
+      startVideoPlayer(config);
   };
 
   const handleConfirmNotice = () => {
       if (dontShowNoticeAgain) localStorage.setItem('void_skip_server_notice', 'true');
       setShowServerNotice(false);
-      setShowAds(true);
+      // Se tiver ads, mostraria aqui, senão play
+      if (pendingPlayerState) startVideoPlayer(pendingPlayerState);
   };
 
   const closeAdsAndPlay = () => {
@@ -470,66 +433,29 @@ const App: React.FC = () => {
                        tmdbId: item.tmdb_id,
                        season: item.season,
                        episode: item.episode,
-                       initialTime: item.progress // PASSAR TEMPO SALVO
+                       initialTime: item.progress 
                    });
                    setWelcomeBackToast({visible: false, item: null});
                }}
           >
               <img src={tmdb.getPosterUrl(welcomeBackToast.item.poster_path)} className="w-12 h-16 object-cover rounded-md" />
               <div className="flex flex-col justify-center">
-                  <p className="text-primary text-[10px] font-bold uppercase tracking-widest mb-1">Continuar de onde parou?</p>
+                  <p className="text-primary text-[10px] font-bold uppercase tracking-widest mb-1">Continuar?</p>
                   <p className="text-white font-bold text-sm line-clamp-1">{welcomeBackToast.item.title}</p>
-                  <p className="text-white/50 text-xs">Falta {Math.floor(((welcomeBackToast.item.duration || 0) - (welcomeBackToast.item.progress || 0))/60)} min</p>
               </div>
-          </div>
-      )}
-
-      {/* MODALS */}
-      {showServerNotice && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
-              <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl max-w-sm w-full p-6 shadow-2xl relative overflow-hidden animate-slide-up">
-                  <div className="relative z-10 text-center">
-                      <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4 border border-white/10 shadow-[0_0_20px_var(--primary-color)]">
-                          <span className="material-symbols-rounded text-primary text-3xl">dns</span>
-                      </div>
-                      <h2 className="text-xl font-display font-bold text-white mb-2">Dica de Reprodução</h2>
-                      <p className="text-white/70 text-sm leading-relaxed mb-6">Utilize o Servidor 2 para melhor velocidade. Se falhar, tente o backup.</p>
-                      <button onClick={handleConfirmNotice} className="w-full bg-white text-black font-bold py-3.5 rounded-xl hover:bg-gray-200 transition-all mb-4">Entendi, Vamos Assistir</button>
-                      <div className="flex items-center justify-center gap-2 cursor-pointer group" onClick={() => setDontShowNoticeAgain(!dontShowNoticeAgain)}>
-                          <div className={`w-5 h-5 rounded border border-white/30 flex items-center justify-center transition-colors ${dontShowNoticeAgain ? 'bg-primary border-primary' : 'bg-transparent'}`}>
-                              {dontShowNoticeAgain && <span className="material-symbols-rounded text-white text-sm">check</span>}
-                          </div>
-                          <span className="text-xs text-white/50 group-hover:text-white/80 transition-colors">Não mostrar novamente</span>
-                      </div>
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {/* ADS */}
-      {showAds && !showServerNotice && (
-          <div className="fixed inset-0 z-[150] bg-black flex flex-col items-center justify-center p-4 animate-fade-in">
-              <div className="absolute top-6 right-6 z-50">
-                  <button onClick={closeAdsAndPlay} className="bg-white/10 hover:bg-white/20 border border-white/20 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 transition-all backdrop-blur-md">
-                      {adTimer > 0 ? `Aguarde ${adTimer}s` : 'Pular Anúncio'} 
-                      <span className="material-symbols-rounded">skip_next</span>
-                  </button>
-              </div>
-              <div ref={adContainerRef} className="bg-transparent p-2 rounded-xl max-w-full flex items-center justify-center z-40 relative min-w-[320px] min-h-[100px]"></div>
           </div>
       )}
 
       {/* FOUND OVERLAY */}
       {videoFoundOverlay && (
-          <div className="fixed inset-0 z-[140] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center animate-fade-in pointer-events-none">
-              <div className="relative">
-                  <div className="w-24 h-24 bg-primary/20 rounded-full flex items-center justify-center animate-ping-slow"></div>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="material-symbols-rounded text-6xl text-primary drop-shadow-[0_0_20px_#f20df2]">check_circle</span>
-                  </div>
+          <div className="fixed inset-0 z-[140] bg-black flex flex-col items-center justify-center animate-fade-in pointer-events-none">
+              <div className="w-full h-1 absolute top-0 left-0 bg-white/10 overflow-hidden">
+                  <div className="h-full bg-primary animate-progress-line"></div>
               </div>
-              <h2 className="mt-8 text-2xl font-display font-bold text-white tracking-widest uppercase animate-slide-up">Vídeo Encontrado!</h2>
-              <p className="mt-2 text-white/50 text-sm animate-pulse">Carregando Player Nativo...</p>
+              <div className="flex flex-col items-center animate-slide-up">
+                  <span className="material-symbols-rounded text-6xl text-white mb-6">play_circle</span>
+                  <h2 className="text-2xl font-display font-bold text-white tracking-widest uppercase">Iniciando Player</h2>
+              </div>
           </div>
       )}
 
@@ -553,52 +479,50 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* PLAYER EMBED */}
+      {/* PLAYER EMBED (WEBVIEW MODE) */}
       {playerState && !nativeVideoUrl && !showAds && !showServerNotice && !videoFoundOverlay && (
         <div className="fixed inset-0 z-[100] bg-black animate-fade-in flex flex-col overflow-hidden">
-            <div className="absolute top-0 left-0 w-full z-30 p-4 flex justify-between items-start bg-gradient-to-b from-black/90 to-transparent pointer-events-none">
-                <div className="pointer-events-auto flex items-center gap-4">
-                    <button onClick={closeNativePlayer} className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center hover:bg-white/20 transition-colors text-white">
-                        <span className="material-symbols-rounded">arrow_back</span>
+            
+            {/* ELEGANT TOP BAR */}
+            <div className="absolute top-0 left-0 w-full z-40 p-4 flex justify-between items-start pointer-events-none">
+                <button onClick={closeNativePlayer} className="pointer-events-auto w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/5 flex items-center justify-center hover:bg-white/10 transition-colors text-white">
+                    <span className="material-symbols-rounded">arrow_back</span>
+                </button>
+                
+                {/* Minimal Server Switcher */}
+                <div className="pointer-events-auto flex gap-2 p-1 bg-black/60 backdrop-blur-xl border border-white/5 rounded-full">
+                    <button onClick={() => { setActiveServer('superflix'); setIsIframeLoaded(false); }} className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${activeServer === 'superflix' ? 'bg-white text-black' : 'text-white/40 hover:text-white'}`}>
+                        Server Fast
                     </button>
-                    <div>
-                        <h2 className="text-white font-bold text-sm shadow-black drop-shadow-md">{playerState.title}</h2>
-                        {playerState.type === 'tv' && <p className="text-white/60 text-xs">S{playerState.season} E{playerState.episode}</p>}
-                    </div>
-                </div>
-                <div className="pointer-events-auto bg-black/60 backdrop-blur-md border border-white/10 rounded-lg p-1 flex gap-1">
-                    <button onClick={() => { setActiveServer('superflix'); setIsIframeLoaded(false); }} className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1 ${activeServer === 'superflix' ? 'bg-green-600 text-white shadow-lg' : 'text-white/50 hover:bg-white/10 hover:text-white'}`}>
-                        {activeServer === 'superflix' && <span className="material-symbols-rounded text-[10px]">star</span>}
-                        Servidor 2
-                    </button>
-                    <button onClick={() => { setActiveServer('playerflix'); setIsIframeLoaded(false); }} className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${activeServer === 'playerflix' ? 'bg-primary text-white shadow-lg' : 'text-white/50 hover:bg-white/10 hover:text-white'}`}>
-                        Servidor 1
+                    <button onClick={() => { setActiveServer('playerflix'); setIsIframeLoaded(false); }} className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${activeServer === 'playerflix' ? 'bg-white text-black' : 'text-white/40 hover:text-white'}`}>
+                        Backup
                     </button>
                 </div>
             </div>
 
-            <div className={`absolute inset-0 z-20 flex flex-col items-center justify-center bg-black transition-opacity duration-700 ease-in-out pointer-events-none ${isIframeLoaded ? 'opacity-0' : 'opacity-100'}`}>
+            {/* BLACK LOADING OVERLAY (NO POLLUTION) */}
+            <div className={`absolute inset-0 z-30 flex flex-col items-center justify-center bg-black transition-opacity duration-1000 ease-in-out pointer-events-none ${isIframeLoaded ? 'opacity-0' : 'opacity-100'}`}>
                 {playerState.backdrop && (
-                    <div className="absolute inset-0 bg-cover bg-center opacity-40 scale-110 blur-xl animate-pulse-slow" style={{backgroundImage: `url(${tmdb.getBackdropUrl(playerState.backdrop)})`}}></div>
+                    <div className="absolute inset-0 bg-cover bg-center opacity-20 blur-2xl animate-pulse-slow scale-110" style={{backgroundImage: `url(${tmdb.getBackdropUrl(playerState.backdrop)})`}}></div>
                 )}
-                <div className="relative z-10 flex flex-col items-center text-center p-6">
-                    <div className="w-20 h-20 border-4 border-white/10 border-t-primary rounded-full animate-spin mb-8 shadow-[0_0_30px_var(--primary-color)]"></div>
-                    <div className="flex flex-col items-center gap-2 mt-4">
-                        <div className="flex items-center gap-2">
-                            <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></span>
-                            <span className="text-xs uppercase tracking-[0.2em] text-primary font-bold">Conectando ao {activeServer === 'superflix' ? 'Servidor 2 (Rápido)' : 'Servidor 1'}</span>
-                        </div>
-                        <p className="text-white/50 text-[10px] uppercase tracking-widest mt-2">Dica: Selecione "Server Fast" no player abaixo.</p>
+                <div className="relative z-10 flex flex-col items-center">
+                    {/* Minimalist Loader */}
+                    <div className="w-16 h-16 relative">
+                        <div className="absolute inset-0 border-2 border-white/10 rounded-full"></div>
+                        <div className="absolute inset-0 border-t-2 border-primary rounded-full animate-spin"></div>
                     </div>
+                    <h2 className="mt-8 text-white font-display font-bold text-xl tracking-tight">{playerState.title}</h2>
+                    <p className="text-white/40 text-xs mt-2 uppercase tracking-widest font-medium">Conectando...</p>
                 </div>
             </div>
             
+            {/* IFRAME CONTAINER */}
             <div className="flex-1 w-full h-full relative bg-black">
-                 {/* INSTRUÇÃO PISCANTE */}
+                 {/* SUBTLE NOTICE (DISAPPEARS) */}
                  {isIframeLoaded && (
-                     <div className="absolute top-20 left-0 w-full flex justify-center z-10 pointer-events-none animate-fade-in" style={{animationDelay: '1s'}}>
-                         <div className="bg-primary/90 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg animate-pulse border border-white/20 backdrop-blur-md text-center max-w-[90%]">
-                             👆 No player abaixo, selecione a opção "Server Fast" para carregar instantaneamente.
+                     <div className="absolute bottom-10 left-0 w-full flex justify-center z-20 pointer-events-none animate-slide-up">
+                         <div className="bg-black/60 backdrop-blur-md text-white/70 px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-wide border border-white/5">
+                             Dica: Se travar, alterne o servidor acima.
                          </div>
                      </div>
                  )}
@@ -612,7 +536,10 @@ const App: React.FC = () => {
                     title="Player" 
                     allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
                     referrerPolicy="no-referrer"
-                    onLoad={() => setIsIframeLoaded(true)}
+                    onLoad={() => {
+                        // Small delay to ensure render
+                        setTimeout(() => setIsIframeLoaded(true), 1000);
+                    }}
                  ></iframe>
             </div>
         </div>
@@ -644,7 +571,7 @@ const App: React.FC = () => {
       {!playerState && !showAds && !showServerNotice && renderContent()}
 
       {!playerState && !showAds && !showServerNotice && !isPrivacyPage && currentProfile && (
-        <div className="fixed bottom-0 left-0 w-full bg-black/90 backdrop-blur-xl border-t border-white/5 pb-safe pt-2 px-6 z-50 rounded-t-2xl lg:hidden">
+        <div className="fixed bottom-0 left-0 w-full bg-[#050505]/95 backdrop-blur-xl border-t border-white/5 pb-safe pt-2 px-6 z-50 rounded-t-2xl lg:hidden">
             <div className="flex justify-between items-center pb-2">
                 <button onClick={handleGoHome} className={`flex flex-col items-center gap-1 group w-14 ${(hash === '#/' || !hash) ? 'text-white' : 'text-white/30'}`}>
                     <span className="material-symbols-rounded text-2xl group-hover:-translate-y-1 transition-transform">home</span>

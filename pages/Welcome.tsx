@@ -24,7 +24,7 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
 
-  // Intro Slides (Atualizado para ser mais realista sobre as funcionalidades do app)
+  // Intro Slides
   const slides = useMemo(() => [
     {
       title: <>Universo <br/> <span className="text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">Cinematográfico.</span></>,
@@ -40,7 +40,6 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
     }
   ], []);
 
-  // Slide Rotation Logic
   useEffect(() => {
     if (view !== 'intro') return;
     const interval = setInterval(() => {
@@ -50,7 +49,6 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
     return () => clearInterval(interval);
   }, [slides.length, view]);
 
-  // Load Background Posters
   useEffect(() => {
     const loadPosters = async () => {
         try {
@@ -66,7 +64,6 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
     loadPosters();
   }, []);
 
-  // Helper to render poster columns
   const renderColumn = (offset: number) => {
     if (posters.length === 0) {
         return Array(8).fill(0).map((_, i) => (
@@ -116,7 +113,10 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
                  setEmail(email); setPassword('');
             }
         } else if (view === 'forgot') {
-            const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + '#/reset-password' });
+            // CORREÇÃO: URL Fixa para produção
+            const { error } = await supabase.auth.resetPasswordForEmail(email, { 
+                redirectTo: 'https://voidmax.netlify.app/#/reset-password' 
+            });
             if (error) throw error;
             showToast("Link de recuperação enviado.");
             setView('login');

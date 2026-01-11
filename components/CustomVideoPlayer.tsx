@@ -30,7 +30,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<any>(null);
   
-  // States
+  // Player States
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);

@@ -17,7 +17,6 @@ export interface MovieDetails extends Movie {
   tagline: string;
   status: string;
   imdb_id: string;
-  // Campos de tempo para filmes
   opening_credits_start_time?: number;
   opening_credits_end_time?: number;
   end_credits_start_time?: number;
@@ -55,7 +54,6 @@ export interface Episode {
   air_date: string;
   episode_number: number;
   runtime: number;
-  // Campos de tempo da API TMDB
   opening_credits_start_time?: number;
   opening_credits_end_time?: number;
   recap_start_time?: number;
@@ -81,8 +79,8 @@ export interface WatchHistoryItem {
   season?: number;
   episode?: number;
   vote_average: number;
-  progress?: number; // Segundos assistidos
-  duration?: number; // Duração total em segundos
+  progress?: number; 
+  duration?: number; 
 }
 
 export interface LibraryItem {
@@ -103,64 +101,58 @@ export interface Profile {
   name: string;
   avatar: string;
   is_kid: boolean;
-  is_premium: boolean; // Novo campo
+  is_premium: boolean; 
   total_watch_time: number;
   total_movies_watched: number;
   total_episodes_watched: number;
 }
 
 export interface DownloadItem {
-    id: string;             // ID único (Geralmente o TMDB ID como string)
-    tmdbId?: number;        // Opcional se id já for o tmdbId
+    id: string;
+    tmdbId?: number;
     title: string;
     type: 'movie' | 'tv';
     season?: number;
     episode?: number;
-    poster: string;         // URL ou Path do Poster
-    backdrop?: string;      // URL ou Path do Backdrop
-    
-    // Campos controlados pelo Android
+    poster: string;
+    backdrop?: string;
     status: 'pending' | 'downloading' | 'completed' | 'error' | 'paused';
-    progress: number;       // 0 a 100
-    path?: string;          // Caminho absoluto do arquivo local
-    size?: string;          // Ex: "1.2 GB"
-    localFilename?: string; // Nome do arquivo físico
+    progress: number;
+    path?: string;
+    size?: string;
+    localFilename?: string;
+}
+
+export interface SubtitleCue {
+  start: number;
+  end: number;
+  text: string;
+}
+
+export interface SubtitleResult {
+  id: string;
+  language: string;
+  format: string;
+  filename: string;
+  url: string;
 }
 
 declare global {
   interface Window {
-    // Função chamada pelo Java/Android para injetar o vídeo (Entrada)
     receberVideo: (url: string) => void;
-    
-    // Função chamada pelo Android para atualizar a lista de downloads
     updateDownloadList: (jsonString: string) => void;
-
-    // Interface para chamar funções do Android (Saída)
     Android?: {
-        // Envia (URL do Vídeo, JSON String com metadados)
         download: (url: string, jsonMetadata: string) => void;
-        
-        // Método novo para Cast Nativo
         castVideo: (url: string, title: string) => void;
-        
-        // Controle de Orientação
         setOrientation: (orientation: 'landscape' | 'portrait' | 'auto') => void;
-
-        // Controle de Sniffer (Captura de links)
-        stopSniffer: () => void;  // "Já peguei o link, pode parar"
-        startSniffer: () => void; // "Parei de assistir, volta a capturar"
-
-        // Avisa o app nativo que o link foi pego e o player iniciou (para parar sniffers - legado)
+        stopSniffer: () => void;  
+        startSniffer: () => void; 
         onVideoPlaying?: (url: string) => void;
-        // Avisa o app nativo que o player fechou (para retomar sniffers se necessário - legado)
         onPlayerClosed?: () => void;
-        
-        // --- DOWNLOADS OFFLINE ---
-        getDownloads: () => void; // Solicita a lista
-        deleteDownload: (id: string) => void; // Apaga arquivo
-        playOffline: (path: string) => void; // Abre player offline nativo
+        getDownloads: () => void; 
+        deleteDownload: (id: string) => void; 
+        playOffline: (path: string) => void; 
     };
-    
     onVideoDetected: (url: string) => void;
     Hls: any;
   }

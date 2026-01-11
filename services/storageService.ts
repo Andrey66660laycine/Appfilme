@@ -58,6 +58,7 @@ export const storageService = {
 
   getHistory: async (profileId: string): Promise<WatchHistoryItem[]> => {
       try {
+          // CRITICAL: Usa chave única composta com profileId
           const raw = localStorage.getItem(`${HISTORY_KEY}_${profileId}`);
           if (!raw) return [];
           const history: WatchHistoryItem[] = JSON.parse(raw);
@@ -134,6 +135,7 @@ export const storageService = {
 
   updateProgress: async (profileId: string, tmdbId: number, type: 'movie'|'tv', progress: number, duration: number, season?: number, episode?: number, extraData?: any) => {
       try {
+          // CRITICAL: Garante que estamos salvando na chave específica do perfil
           const key = `${HISTORY_KEY}_${profileId}`;
           const raw = localStorage.getItem(key);
           let history: any[] = raw ? JSON.parse(raw) : [];

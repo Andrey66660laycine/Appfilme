@@ -35,7 +35,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [showControls, setShowControls] = useState(true);
-  const [showUnlockButton, setShowUnlockButton] = useState(false); // Novo estado para o botão de bloqueio
+  const [showUnlockButton, setShowUnlockButton] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isLocked, setIsLocked] = useState(false);
   const [fitMode, setFitMode] = useState<'contain' | 'cover'>('contain');
@@ -44,13 +44,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [hasResumed, setHasResumed] = useState(false);
   
-  // Skip States
-  const [showSkipIntro, setShowSkipIntro] = useState(false);
-  const [showSkipRecap, setShowSkipRecap] = useState(false);
-  const [skipTimeTarget, setSkipTimeTarget] = useState(0); // Para onde pular
-  
   // Data
-  const [currentEpisodeData, setCurrentEpisodeData] = useState<Episode | null>(null);
   const [seasonEpisodes, setSeasonEpisodes] = useState<Episode[]>([]);
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -84,9 +78,8 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       };
   }, []);
 
-  // --- CONTROLS VISIBILITY LOGIC (Refined) ---
+  // --- CONTROLS VISIBILITY LOGIC ---
   const showControlsTemporarily = () => {
-      // Se estiver bloqueado, mostra apenas o botão de desbloqueio
       if (isLocked) {
           setShowUnlockButton(true);
           if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current);
@@ -94,11 +87,9 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           return;
       }
 
-      // Se não bloqueado, mostra controles normais
       setShowControls(true);
       if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
       if (playing && !showSidePanel) {
-          // Tempo reduzido para 2.5s para desaparecer mais rápido
           controlsTimeoutRef.current = window.setTimeout(() => setShowControls(false), 2500);
       }
   };
@@ -108,7 +99,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       const onInt = () => showControlsTemporarily();
       window.addEventListener('mousemove', onInt);
       window.addEventListener('touchstart', onInt);
-      // Ao clicar, garante visibilidade
       window.addEventListener('click', onInt);
       
       return () => {
@@ -120,57 +110,18 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       };
   }, [playing, isLocked, showSidePanel]);
 
-  // --- DATA LOADING & SKIP LOGIC ---
+  // --- DATA LOADING ---
   useEffect(() => {
     const loadData = async () => {
         if (type === 'tv' && season && tmdbId) {
             try {
                 const eps = await tmdb.getTVSeason(String(tmdbId), season);
                 setSeasonEpisodes(eps);
-                const current = eps.find(e => e.episode_number === episode);
-                if (current) setCurrentEpisodeData(current);
             } catch(e) {}
         }
     };
     loadData();
   }, [tmdbId, type, season, episode]);
-
-  const checkSkipLogic = (time: number) => {
-      let showIntro = false;
-      let showRecap = false;
-      let target = 0;
-
-      if (currentEpisodeData) {
-          // Lógica baseada em dados da API (Prioridade)
-          if (currentEpisodeData.opening_credits_start_time && currentEpisodeData.opening_credits_end_time) {
-              if (time >= currentEpisodeData.opening_credits_start_time && time < currentEpisodeData.opening_credits_end_time) {
-                  showIntro = true;
-                  target = currentEpisodeData.opening_credits_end_time;
-              }
-          } else {
-              // Fallback manual se não tiver dados
-              if (time > 35 && time < 280) showIntro = true; 
-              target = time + 85; // Pula 85s por padrão
-          }
-
-          if (currentEpisodeData.recap_start_time && currentEpisodeData.recap_end_time) {
-              if (time >= currentEpisodeData.recap_start_time && time < currentEpisodeData.recap_end_time) {
-                  showRecap = true;
-                  target = currentEpisodeData.recap_end_time;
-              }
-          }
-      } else {
-          // Fallback Genérico para Filmes/Séries sem dados
-          if (time > 35 && time < 280) {
-              showIntro = true;
-              target = time + 85;
-          }
-      }
-
-      setShowSkipIntro(showIntro);
-      setShowSkipRecap(showRecap);
-      if (showIntro || showRecap) setSkipTimeTarget(target);
-  };
 
   // --- VIDEO SETUP ---
   useEffect(() => {
@@ -221,7 +172,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     const onTimeUpdate = () => {
         setCurrentTime(video.currentTime);
         setDuration(video.duration || 0);
-        checkSkipLogic(video.currentTime); // Check skip every update
     };
     
     const onLoadedMetadata = () => {
@@ -262,7 +212,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
 
   const handleTouchStart = (e: React.TouchEvent) => {
       if (isLocked) {
-          // Apenas mostra o botão de desbloqueio e reseta o timer
           showControlsTemporarily();
           return;
       }
@@ -301,21 +250,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       }
   };
   
-  const performSkip = () => {
-      if (videoRef.current && skipTimeTarget > 0) {
-          // Se for fallback, apenas soma, se for API, vai pro target exato
-          if (skipTimeTarget < 1000) { // Assumindo timestamp
-             videoRef.current.currentTime = skipTimeTarget;
-          } else {
-             // Fallback logic protection if needed
-             videoRef.current.currentTime += 85; 
-          }
-          showControlsTemporarily();
-      } else {
-          seek(85); // Hard fallback
-      }
-  };
-
   const formatTime = (t: number) => {
       if (!t) return "0:00";
       const m = Math.floor((t % 3600) / 60);
@@ -379,18 +313,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
             </div>
         )}
 
-        {/* SKIP INTRO BUTTON */}
-        {(showSkipIntro || showSkipRecap) && !isLocked && (
-            <button 
-                onClick={(e) => { e.stopPropagation(); performSkip(); }}
-                className="absolute bottom-32 right-6 z-50 bg-white text-black px-6 py-3 rounded-xl font-bold text-sm flex items-center gap-2 shadow-xl hover:scale-105 active:scale-95 transition-all animate-slide-up group"
-            >
-                <div className="w-0 group-hover:w-4 transition-all overflow-hidden flex items-center"><span className="material-symbols-rounded text-lg">fast_forward</span></div>
-                {showSkipRecap ? 'Pular Recapitulação' : 'Pular Abertura'}
-            </button>
-        )}
-
-        {/* LOCKED OVERLAY (Só aparece quando showUnlockButton é true) */}
+        {/* LOCKED OVERLAY */}
         {isLocked && (
              <div className={`absolute top-12 left-1/2 -translate-x-1/2 z-50 transition-opacity duration-300 ${showUnlockButton ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
                  <button onClick={() => setIsLocked(false)} className="bg-white/10 backdrop-blur-md border border-white/20 px-8 py-3 rounded-full flex items-center gap-3 shadow-2xl hover:bg-white/20 transition-colors">

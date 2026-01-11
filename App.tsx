@@ -279,7 +279,6 @@ const App: React.FC = () => {
     setActiveServer('superflix'); 
 
     if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
-    // Tempo aumentado para garantir que o loader bonito fique na tela
     loaderTimeoutRef.current = window.setTimeout(() => { setIsIframeLoaded(true); }, 5000);
 
     setPlayerState(config);
@@ -344,14 +343,12 @@ const App: React.FC = () => {
   const handlePlayRequest = (config: PlayerState) => {
       if (!currentProfile) return;
       setPendingPlayerState(config);
-      // Pular avisos antigos e ir direto pro player
       startVideoPlayer(config);
   };
 
   const handleConfirmNotice = () => {
       if (dontShowNoticeAgain) localStorage.setItem('void_skip_server_notice', 'true');
       setShowServerNotice(false);
-      // Se tiver ads, mostraria aqui, senão play
       if (pendingPlayerState) startVideoPlayer(pendingPlayerState);
   };
 
@@ -446,16 +443,32 @@ const App: React.FC = () => {
           </div>
       )}
 
-      {/* FOUND OVERLAY */}
+      {/* VIDEO FOUND OVERLAY (NEW CINEMATIC LOADER) */}
       {videoFoundOverlay && (
-          <div className="fixed inset-0 z-[140] bg-black flex flex-col items-center justify-center animate-fade-in pointer-events-none">
-              <div className="w-full h-1 absolute top-0 left-0 bg-white/10 overflow-hidden">
-                  <div className="h-full bg-primary animate-progress-line"></div>
+          <div className="fixed inset-0 z-[140] bg-[#050505] flex flex-col items-center justify-center animate-fade-in pointer-events-none overflow-hidden">
+              <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03]"></div>
+              
+              <div className="relative w-24 h-24 mb-8">
+                  <div className="absolute inset-0 border-t-2 border-primary rounded-full animate-spin"></div>
+                  <div className="absolute inset-2 border-r-2 border-purple-500 rounded-full animate-spin-reverse opacity-70"></div>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="material-symbols-rounded text-3xl text-white animate-pulse">lock_open</span>
+                  </div>
               </div>
-              <div className="flex flex-col items-center animate-slide-up">
-                  <span className="material-symbols-rounded text-6xl text-white mb-6">play_circle</span>
-                  <h2 className="text-2xl font-display font-bold text-white tracking-widest uppercase">Iniciando Player</h2>
+
+              <h2 className="text-3xl font-display font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-white/50 tracking-[0.2em] uppercase animate-pulse">
+                  Sincronizando
+              </h2>
+              
+              <div className="flex gap-1 mt-4">
+                  <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{animationDelay: '0ms'}}></span>
+                  <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{animationDelay: '100ms'}}></span>
+                  <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{animationDelay: '200ms'}}></span>
               </div>
+              
+              <p className="absolute bottom-10 text-white/20 text-[10px] uppercase tracking-widest font-mono">
+                  Conexão Segura Estabelecida
+              </p>
           </div>
       )}
 

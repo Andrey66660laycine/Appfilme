@@ -14,7 +14,7 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
   const [posters, setPosters] = useState<string[]>([]);
   
   // States for Auth Flow
-  const [view, setView] = useState<'intro' | 'login' | 'register' | 'forgot'>('intro');
+  const [view, setView] = useState<'intro' | 'login' | 'register' | 'forgot' | 'verify'>('intro');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [toast, setToast] = useState<{show: boolean, msg: string}>({ show: false, msg: '' });
@@ -23,6 +23,7 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [otpCode, setOtpCode] = useState('');
 
   // Intro Slides
   const slides = useMemo(() => [
@@ -89,12 +90,7 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
     try {
         if (view === 'login') {
             const { error } = await supabase.auth.signInWithPassword({ email, password });
-            if (error) {
-                if (error.message.includes("Email not confirmed")) {
-                    throw new Error("Por favor, verifique seu e-mail.");
-                }
-                throw error;
-            }
+            if (error) throw error;
             showToast("Iniciando Void Max...");
             onStart();
         } else if (view === 'register') {
@@ -108,18 +104,38 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
                  showToast("Conta já existe.");
                  setView('login');
             } else {
-                 showToast("Link enviado para seu e-mail.");
-                 setView('login');
-                 setEmail(email); setPassword('');
+                 showToast("Código enviado para seu e-mail.");
+                 setView('verify');
             }
         } else if (view === 'forgot') {
-            // CORREÇÃO: URL Fixa para produção
-            const { error } = await supabase.auth.resetPasswordForEmail(email, { 
-                redirectTo: 'https://voidmax.netlify.app/#/reset-password' 
-            });
+            const { error } = await supabase.auth.resetPasswordForEmail(email);
             if (error) throw error;
-            showToast("Link de recuperação enviado.");
-            setView('login');
+            showToast("Verifique seu e-mail.");
+            setView('verify');
+        } else if (view === 'verify') {
+             // Verificação de OTP
+             const { data, error } = await supabase.auth.verifyOtp({
+                 email,
+                 token: otpCode,
+                 type: 'email'
+             });
+             
+             if (error) {
+                 // Tenta verificar se é um fluxo de recuperação (magic link token)
+                 const { error: recoveryError } = await supabase.auth.verifyOtp({
+                     email,
+                     token: otpCode,
+                     type: 'recovery'
+                 });
+                 if (recoveryError) throw new Error("Código inválido.");
+                 
+                 // Se for recuperação, pede nova senha (simplificado aqui para login direto)
+                 showToast("Recuperado com sucesso!");
+                 onStart();
+             } else {
+                 showToast("E-mail verificado!");
+                 onStart();
+             }
         }
     } catch (error: any) {
         showToast(error.message || "Erro de conexão.");
@@ -283,7 +299,7 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
                                     <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="bg-transparent border-none text-white text-sm w-full focus:ring-0 placeholder-white/20 p-0" required />
                                 </div>
                                 <button type="submit" disabled={isLoading} className="w-full bg-white text-black font-bold text-xs uppercase tracking-widest py-4 rounded-lg hover:bg-gray-200 transition-all mt-4">
-                                    {isLoading ? '...' : 'Enviar Link'}
+                                    {isLoading ? '...' : 'Enviar Código'}
                                 </button>
                             </form>
                             <div className="mt-6 text-center">
@@ -291,6 +307,27 @@ const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
                             </div>
                         </div>
                     )}
+                    
+                    {/* VERIFY CODE (OTP) */}
+                    {view === 'verify' && (
+                        <div className="animate-fade-in">
+                            <h2 className="text-xl font-display font-bold text-white mb-1 tracking-wide">Verificação</h2>
+                            <p className="text-white/30 text-xs mb-8">Digite o código enviado para {email}</p>
+                            
+                            <form onSubmit={handleAuth} className="space-y-6">
+                                <div className="input-minimal pb-2">
+                                    <input type="text" value={otpCode} onChange={(e) => setOtpCode(e.target.value)} placeholder="Código de 6 dígitos" className="bg-transparent border-none text-white text-lg tracking-[0.5em] text-center w-full focus:ring-0 placeholder-white/20 p-0" maxLength={6} required />
+                                </div>
+                                <button type="submit" disabled={isLoading} className="w-full bg-white text-black font-bold text-xs uppercase tracking-widest py-4 rounded-lg hover:bg-gray-200 transition-all mt-4">
+                                    {isLoading ? '...' : 'Confirmar'}
+                                </button>
+                            </form>
+                            <div className="mt-6 text-center">
+                                <button onClick={() => setView('login')} className="text-xs text-white/40 hover:text-white transition-colors">Cancelar</button>
+                            </div>
+                        </div>
+                    )}
+
                 </div>
                 <div className="mt-6 flex justify-center">
                      <button onClick={() => setView('intro')} className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-white/30 hover:text-white hover:border-white transition-all">

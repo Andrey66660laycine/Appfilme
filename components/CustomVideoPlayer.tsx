@@ -32,6 +32,9 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   
+  // Retry Logic Refs (Critical for closure access in HLS config)
+  const retryCountRef = useRef(0);
+
   // Player States
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -45,7 +48,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [hasResumed, setHasResumed] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
+  const [retryCountState, setRetryCountState] = useState(0); // Visual only
   const [errorStatus, setErrorStatus] = useState<string>("");
   
   // Subtitle States
@@ -144,6 +147,8 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     setIsLoading(true);
     setErrorStatus("");
     setHasResumed(false);
+    retryCountRef.current = 0; // Reset refs
+    setRetryCountState(0);
     
     // Suporte explícito a .txt como master playlist (comum em servidores de sniffer)
     const isTxtHls = src.includes('.txt') || src.includes('master.txt');
@@ -158,15 +163,15 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     };
 
     const handleHlsError = (event: any, data: any) => {
-        // Ignora erros não fatais
         if (!data.fatal) return;
 
         console.warn(`⚠️ HLS Fatal Error: ${data.type}`);
         
         const tryRecover = () => {
-            if (retryCount < 4) { // Aumentado para 4 tentativas (Modo agressivo)
-                setRetryCount(prev => prev + 1);
-                console.log(`🔄 Tentando reconectar (Tentativa ${retryCount + 1})...`);
+            if (retryCountRef.current < 4) {
+                retryCountRef.current += 1;
+                setRetryCountState(retryCountRef.current);
+                console.log(`🔄 Tentando reconectar (Tentativa ${retryCountRef.current})...`);
                 
                 if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
                     setErrorStatus("Reconectando (CORS Bypass)...");
@@ -188,7 +193,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                 hlsRef.current?.recoverMediaError();
                 break;
             default:
-                // Tenta reinicializar do zero
                 hlsRef.current?.destroy();
                 initHls(); 
                 break;
@@ -201,19 +205,17 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                 enableWorker: true,
                 lowLatencyMode: true,
                 backBufferLength: 90,
-                // Buffer mais agressivo para .txt/hls instáveis
                 maxBufferLength: 60, 
                 maxMaxBufferLength: 600,
                 startLevel: -1, 
-                // Timeouts rápidos para falhar logo e tentar outro método se necessário
                 manifestLoadingTimeOut: 15000, 
                 manifestLoadingMaxRetry: 4,
                 levelLoadingMaxRetry: 4,
                 fragLoadingMaxRetry: 4,
-                // Tenta forçar xhr com credenciais se falhar (às vezes ajuda com CORS)
                 xhrSetup: (xhr, url) => {
-                    if (isTxtHls && retryCount > 1) {
-                        xhr.withCredentials = false; // Alterna comportamento na tentativa 2+
+                    // Use REF here to ensure we get the updated count even inside this closure
+                    if (isTxtHls && retryCountRef.current > 1) {
+                        xhr.withCredentials = false;
                     }
                 }
             });
@@ -231,12 +233,10 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
 
             hls.on(Hls.Events.ERROR, handleHlsError);
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            // Safari / Native HLS
             video.src = src;
             video.addEventListener('loadedmetadata', attemptResume);
             video.play().catch(() => {});
         } else {
-            // Direct file (mp4, mkv) ou navegador sem suporte HLS
             video.src = src;
             video.load();
             video.play().catch(() => {});
@@ -288,7 +288,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
         video.removeEventListener('pause', onPause);
         video.removeEventListener('timeupdate', onTimeUpdate);
         video.removeEventListener('loadedmetadata', onLoadedMetadata);
-        setRetryCount(0);
+        retryCountRef.current = 0;
     };
   }, [src]);
 
@@ -417,7 +417,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
             ref={videoRef} 
             className={`w-full h-full object-${fitMode} transition-all duration-300`} 
             playsInline 
-            crossOrigin="anonymous" // Ajuda com alguns problemas de CORS
+            crossOrigin="anonymous" 
         />
 
         {/* SUBTITLE OVERLAY */}
@@ -437,7 +437,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                      <p className="text-white/60 text-xs font-bold tracking-[0.2em] animate-pulse">
                          {errorStatus || "CARREGANDO"}
                      </p>
-                     {retryCount > 0 && <p className="text-yellow-400 text-xs font-mono">Tentativa {retryCount}/4</p>}
+                     {retryCountState > 0 && <p className="text-yellow-400 text-xs font-mono">Tentativa {retryCountState}/4</p>}
                  </div>
             </div>
         )}
@@ -481,7 +481,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                     </div>
                     
                     <div className="flex gap-3">
-                        {/* CC Button */}
                         <button onClick={() => { setShowSubtitleModal(true); handleSearchSubtitles(); }} className={`w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 flex items-center justify-center transition-all backdrop-blur-md ${isSubtitleEnabled ? 'text-primary border-primary/50' : 'text-white'}`}>
                              <span className="material-symbols-rounded">closed_caption</span>
                         </button>

@@ -353,7 +353,7 @@ const App: React.FC = () => {
                     });
                 }
             } catch (e) {
-                console.error(e);
+                console.error("Error fetching details for player", e);
             }
         };
         fetchDetails();

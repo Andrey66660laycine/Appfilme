@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef, createContext, useContext } from 'react';
 import Home from './pages/Home';
 import Search from './pages/Search';
@@ -49,24 +48,45 @@ const App: React.FC = () => {
   const [playerState, setPlayerState] = useState<PlayerState | null>(null);
   const [nativeVideoUrl, setNativeVideoUrl] = useState<string | null>(null); 
   const [playerRecommendations, setPlayerRecommendations] = useState<Movie[]>([]); 
-  const [isPlayerStable, setIsPlayerStable] = useState(false); 
-  const [failedUrls, setFailedUrls] = useState<Set<string>>(new Set());
   const [isIframeLoaded, setIsIframeLoaded] = useState(false); 
   const [nextEpisode, setNextEpisode] = useState<NextEpisodeInfo | null>(null);
-  const [showServerNotice, setShowServerNotice] = useState(false);
-  const [dontShowNoticeAgain, setDontShowNoticeAgain] = useState(false);
-  const [pendingPlayerState, setPendingPlayerState] = useState<PlayerState | null>(null);
   const [showAds, setShowAds] = useState(false);
-  const [adTimer, setAdTimer] = useState(15);
+  const [showServerNotice, setShowServerNotice] = useState(false);
   
-  const [videoFoundOverlay, setVideoFoundOverlay] = useState(false);
-  const [decryptionProgress, setDecryptionProgress] = useState(0);
-
   const [welcomeBackToast, setWelcomeBackToast] = useState<{ visible: boolean; item: any }>({ visible: false, item: null });
-  
+
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const adContainerRef = useRef<HTMLDivElement>(null);
   const loaderTimeoutRef = useRef<number | null>(null);
+
+  // --- LOGICA DE SNIFFER OTIMIZADA (SEM TRAVAMENTOS) ---
+  useEffect(() => {
+    // Palavras-chave para ignorar (anúncios, trackers)
+    const AD_KEYWORDS = ['doubleclick', 'googleads', 'facebook', 'analytics', 'pixel', 'tracker', 'shim', 'pixel'];
+
+    window.receberVideo = async (url: string) => {
+        if (!url) return;
+        const lowerUrl = url.toLowerCase();
+        
+        // Filtro básico de segurança
+        if (AD_KEYWORDS.some(keyword => lowerUrl.includes(keyword))) return;
+
+        // Se chegou aqui, é um vídeo. Envia DIRETO para o player.
+        // O player externo (Netlify) lidará com erros de CORS ou formatos.
+        console.log("🚀 URL Detectada:", url);
+        setNativeVideoUrl(url);
+    };
+  }, []);
+
+  useEffect(() => {
+    const isNativeApp = !!window.Android;
+    if (!showSplash && session && currentProfile && !isNativeApp) {
+        const hasInstalled = localStorage.getItem('void_app_installed');
+        if (hasInstalled !== 'true') {
+            const timer = setTimeout(() => { setShowAppModal(true); }, 3000);
+            return () => clearTimeout(timer);
+        }
+    }
+  }, [showSplash, session, currentProfile]);
 
   useEffect(() => {
       const checkLastWatch = async () => {
@@ -85,114 +105,7 @@ const App: React.FC = () => {
           }
       };
       if (currentProfile && !playerState) checkLastWatch();
-  }, [currentProfile]);
-
-  const validateVideoDuration = (url: string): Promise<boolean> => {
-      return new Promise((resolve) => {
-          // OTIMIZAÇÃO: Aprovação instantânea para .txt e .m3u8 conhecidos (Warez/HLS)
-          // Isso faz o player abrir "ao mesmo tempo" que o link é detectado, sem esperar validação
-          if (
-              url.includes('.m3u8') || 
-              url.includes('.txt') || 
-              url.includes('/hls/') ||
-              url.includes('112234152.xyz') // Domínio específico do usuário
-          ) { 
-              resolve(true); 
-              return; 
-          }
-
-          if (url.startsWith('blob:')) { resolve(true); return; }
-
-          const tempVideo = document.createElement('video');
-          tempVideo.preload = 'metadata';
-          tempVideo.muted = true;
-          const timeout = setTimeout(() => {
-              tempVideo.src = "";
-              resolve(true); // Timeout assume válido para não travar
-          }, 1500); // Timeout reduzido para agilidade
-
-          tempVideo.onloadedmetadata = () => {
-              clearTimeout(timeout);
-              const duration = tempVideo.duration;
-              tempVideo.src = ""; 
-              // Filtra vídeos muito curtos (ads/intros falsas)
-              if (duration && !isNaN(duration) && duration < 120) {
-                  resolve(false);
-              } else {
-                  resolve(true);
-              }
-          };
-          tempVideo.onerror = () => { clearTimeout(timeout); resolve(true); };
-          tempVideo.src = url;
-      });
-  };
-
-  useEffect(() => {
-    const VIDEO_PATTERNS = [
-        /\.mp4($|\?)/i, /\.mkv($|\?)/i, /\.avi($|\?)/i, 
-        /\.m3u8($|\?)/i, /\.mpd($|\?)/i, /master\.txt($|\?)/i, 
-        /\/hls\//i, /video\/mp4/i, /\.xyz\/m3\//i,
-        /master\.txt/i // Força detecção de master.txt
-    ];
-    const AD_KEYWORDS = ['doubleclick', 'googleads', 'googlesyndication', 'facebook', 'analytics', 'pixel', 'tracker', 'adsystem', 'banner', 'pop', 'juicyads'];
-
-    window.receberVideo = async (url: string) => {
-        if (!url) return;
-        const lowerUrl = url.toLowerCase();
-        
-        // Verificação rápida de bloqueio
-        if (AD_KEYWORDS.some(keyword => lowerUrl.includes(keyword))) return;
-
-        const isValidPattern = VIDEO_PATTERNS.some(regex => regex.test(url)) || url.startsWith('blob:');
-
-        if (isValidPattern) {
-            // Validação otimizada (Instantânea para HLS)
-            const isLongEnough = await validateVideoDuration(url);
-            if (!isLongEnough) return; 
-
-            console.log("🚀 VÍDEO RÁPIDO DETECTADO:", url);
-            
-            setNativeVideoUrl(prev => {
-                if (prev === url) return prev;
-                
-                // Overlay Ultra-Rápido
-                setVideoFoundOverlay(true);
-                setDecryptionProgress(0);
-                
-                // Simula "Decodificação" visual rápida enquanto carrega o player
-                let prog = 0;
-                const interval = setInterval(() => {
-                    prog += 10; // Muito mais rápido
-                    if (prog >= 100) {
-                        prog = 100;
-                        clearInterval(interval);
-                        
-                        setNativeVideoUrl(url);
-                        setIsIframeLoaded(false);
-                        
-                        setTimeout(() => {
-                            setVideoFoundOverlay(false);
-                        }, 500);
-                    }
-                    setDecryptionProgress(prog);
-                }, 30);
-
-                return prev;
-            });
-        }
-    };
-  }, []);
-
-  useEffect(() => {
-    const isNativeApp = !!window.Android;
-    if (!showSplash && session && currentProfile && !isNativeApp) {
-        const hasInstalled = localStorage.getItem('void_app_installed');
-        if (hasInstalled !== 'true') {
-            const timer = setTimeout(() => { setShowAppModal(true); }, 3000);
-            return () => clearTimeout(timer);
-        }
-    }
-  }, [showSplash, session, currentProfile]);
+  }, [currentProfile, playerState]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
@@ -241,9 +154,9 @@ const App: React.FC = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Carrega recomendações e próximo episódio para passar ao player
   useEffect(() => {
     if (playerState) {
-        // Fetch paralelo para não bloquear UI
         const fetchPlayerExtras = async () => {
             const promises = [];
 
@@ -310,17 +223,14 @@ const App: React.FC = () => {
   const startVideoPlayer = async (config: PlayerState) => {
     setIsIframeLoaded(false);
     setNativeVideoUrl(null); 
-    setVideoFoundOverlay(false);
-    setFailedUrls(new Set()); 
-    setIsPlayerStable(false);
-    setPendingPlayerState(null);
-
+    
     if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
-    loaderTimeoutRef.current = window.setTimeout(() => { setIsIframeLoaded(true); }, 5000);
+    // Timeout de segurança maior para dar tempo do sniffer pegar o link
+    loaderTimeoutRef.current = window.setTimeout(() => { setIsIframeLoaded(true); }, 8000);
 
     setPlayerState(config);
 
-    // Carrega detalhes em segundo plano para não atrasar a abertura do player
+    // Carrega metadados (Título, Backdrop) antes de abrir
     if (currentProfile && config.tmdbId) {
         const fetchDetails = async () => {
             let details: any = null;
@@ -339,6 +249,7 @@ const App: React.FC = () => {
                         id: config.type === 'movie' ? (details.imdb_id || String(config.tmdbId)) : String(config.tmdbId)
                     }) : null);
 
+                    // Salva no histórico local
                     storageService.addToHistory(currentProfile.id, {
                         id: config.tmdbId,
                         type: config.type,
@@ -353,7 +264,7 @@ const App: React.FC = () => {
                     });
                 }
             } catch (e) {
-                console.error("Error fetching details for player", e);
+                console.error("Erro ao buscar detalhes para o player", e);
             }
         };
         fetchDetails();
@@ -362,7 +273,6 @@ const App: React.FC = () => {
 
   const handleNextEpisode = () => {
       if (playerState && nextEpisode) {
-          setIsPlayerStable(false);
           startVideoPlayer({
               ...playerState,
               season: nextEpisode.season,
@@ -373,7 +283,6 @@ const App: React.FC = () => {
   };
   
   const handlePlayRelated = (movie: Movie) => {
-      setIsPlayerStable(false);
       if (playerState?.type === 'tv' && (movie as any).episode_number) {
            const epNumber = (movie as any).episode_number;
            startVideoPlayer({
@@ -388,29 +297,23 @@ const App: React.FC = () => {
 
   const handlePlayRequest = (config: PlayerState) => {
       if (!currentProfile) return;
-      setPendingPlayerState(config);
       startVideoPlayer(config);
   };
 
   const closeNativePlayer = () => {
       setNativeVideoUrl(null);
       setPlayerState(null);
-      setIsPlayerStable(false);
-      setVideoFoundOverlay(false);
       if (window.history.state?.playerOpen) window.history.back();
   };
 
   const handleNativePlayerError = () => {
-      setIsPlayerStable(false);
-      if (nativeVideoUrl) setFailedUrls(prev => new Set(prev).add(nativeVideoUrl));
+      // Se falhar o nativo, reseta e mostra o embed
       setNativeVideoUrl(null);
       setIsIframeLoaded(false); 
       if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
       loaderTimeoutRef.current = window.setTimeout(() => { setIsIframeLoaded(true); }, 5000);
   };
   
-  const handlePlayerStable = () => { setIsPlayerStable(true); };
-
   const getEmbedUrl = () => {
     if (!playerState) return '';
     if (playerState.type === 'movie') return `https://playerflixapi.com/filme/${playerState.id}`;
@@ -478,35 +381,12 @@ const App: React.FC = () => {
           </div>
       )}
 
-      {/* INTERCEPTION / SIGNAL DECRYPTION OVERLAY */}
-      {videoFoundOverlay && (
-          <div className="fixed inset-0 z-[140] bg-[#000000] flex flex-col items-center justify-center pointer-events-none font-mono text-green-500 overflow-hidden">
-              <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-10 bg-[length:100%_2px,3px_100%] pointer-events-none"></div>
-              
-              <div className="w-full max-w-md px-8 relative z-20 flex flex-col gap-6">
-                  <div className="flex justify-between items-end border-b border-green-500/30 pb-2 mb-2">
-                      <span className="text-xs uppercase tracking-widest animate-pulse">Sinal HLS Detectado...</span>
-                      <span className="text-xl font-bold">{Math.round(decryptionProgress)}%</span>
-                  </div>
-                  <div className="w-full h-1 bg-green-900/30 rounded-full overflow-hidden">
-                      <div className="h-full bg-green-500 shadow-[0_0_10px_#00ff00]" style={{ width: `${decryptionProgress}%`, transition: 'width 0.1s linear' }}></div>
-                  </div>
-                  <div className="text-[10px] opacity-60 leading-tight space-y-1 h-20 overflow-hidden">
-                      <p>&gt; HLS_MANIFEST: PARSED</p>
-                      <p>&gt; BYPASSING_CORS: RETRY_MODE_ACTIVE</p>
-                      <p>&gt; DECRYPTING_STREAM_KEY... OK</p>
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {/* PLAYER NATIVO */}
-      {nativeVideoUrl && playerState && currentProfile && !videoFoundOverlay && (
+      {/* PLAYER PONTE (IFRAME BRIDGE) */}
+      {nativeVideoUrl && playerState && currentProfile && (
         <CustomVideoPlayer 
             src={nativeVideoUrl}
             onClose={closeNativePlayer}
             onErrorFallback={handleNativePlayerError} 
-            onPlayerStable={handlePlayerStable}
             title={playerState.title}
             profileId={currentProfile.id}
             tmdbId={playerState.tmdbId}
@@ -520,18 +400,18 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* PLAYER EMBED (WEBVIEW MODE) */}
-      {playerState && !nativeVideoUrl && !showAds && !showServerNotice && !videoFoundOverlay && (
+      {/* BUSCA DE EMBED (FALLBACK SE O SNIFFER NÃO PEGAR NADA) */}
+      {playerState && !nativeVideoUrl && !showAds && (
         <div className="fixed inset-0 z-[100] bg-black animate-fade-in flex flex-col overflow-hidden">
             
-            {/* ELEGANT TOP BAR */}
+            {/* TOP BAR */}
             <div className="absolute top-0 left-0 w-full z-40 p-4 flex justify-between items-start pointer-events-none">
                 <button onClick={closeNativePlayer} className="pointer-events-auto w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/5 flex items-center justify-center hover:bg-white/10 transition-colors text-white">
                     <span className="material-symbols-rounded">arrow_back</span>
                 </button>
             </div>
 
-            {/* BLACK LOADING OVERLAY */}
+            {/* LOADER OVERLAY */}
             <div className={`absolute inset-0 z-30 flex flex-col items-center justify-center bg-black transition-opacity duration-1000 ease-in-out pointer-events-none ${isIframeLoaded ? 'opacity-0' : 'opacity-100'}`}>
                 {playerState.backdrop && (
                     <div className="absolute inset-0 bg-cover bg-center opacity-20 blur-2xl animate-pulse-slow scale-110" style={{backgroundImage: `url(${tmdb.getBackdropUrl(playerState.backdrop)})`}}></div>
@@ -542,11 +422,11 @@ const App: React.FC = () => {
                         <div className="absolute inset-0 border-t-2 border-primary rounded-full animate-spin"></div>
                     </div>
                     <h2 className="mt-8 text-white font-display font-bold text-xl tracking-tight">{playerState.title}</h2>
-                    <p className="text-white/40 text-xs mt-2 uppercase tracking-widest font-medium">Buscando HLS / Embed...</p>
+                    <p className="text-white/40 text-xs mt-2 uppercase tracking-widest font-medium">Buscando Fonte...</p>
                 </div>
             </div>
             
-            {/* IFRAME */}
+            {/* IFRAME EMBED (FALLBACK) */}
             <div className="flex-1 w-full h-full relative bg-black">
                  <iframe 
                     src={getEmbedUrl()} 

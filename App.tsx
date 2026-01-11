@@ -322,34 +322,41 @@ const App: React.FC = () => {
 
     // Carrega detalhes em segundo plano para não atrasar a abertura do player
     if (currentProfile && config.tmdbId) {
-        tmdb.getMovieDetails(String(config.tmdbId)).then(details => {
-             if (!details && config.type === 'tv') {
-                 return tmdb.getTVDetails(String(config.tmdbId));
-             }
-             return details;
-        }).then((details: any) => {
-            if (details) {
-                setPlayerState(prev => prev ? ({
-                    ...prev,
-                    title: config.type === 'movie' ? details.title : details.name,
-                    backdrop: details.backdrop_path,
-                    id: config.type === 'movie' ? (details.imdb_id || String(config.tmdbId)) : String(config.tmdbId)
-                }) : null);
+        const fetchDetails = async () => {
+            let details: any = null;
+            try {
+                if (config.type === 'movie') {
+                    details = await tmdb.getMovieDetails(String(config.tmdbId));
+                } else {
+                    details = await tmdb.getTVDetails(String(config.tmdbId));
+                }
 
-                storageService.addToHistory(currentProfile.id, {
-                    id: config.tmdbId,
-                    type: config.type,
-                    title: config.type === 'movie' ? details.title : details.name,
-                    poster_path: details.poster_path,
-                    backdrop_path: details.backdrop_path,
-                    vote_average: details.vote_average,
-                    season: config.season,
-                    episode: config.episode,
-                    progress: config.initialTime || 0,
-                    duration: 0
-                });
+                if (details) {
+                    setPlayerState(prev => prev ? ({
+                        ...prev,
+                        title: config.type === 'movie' ? details.title : details.name,
+                        backdrop: details.backdrop_path,
+                        id: config.type === 'movie' ? (details.imdb_id || String(config.tmdbId)) : String(config.tmdbId)
+                    }) : null);
+
+                    storageService.addToHistory(currentProfile.id, {
+                        id: config.tmdbId,
+                        type: config.type,
+                        title: config.type === 'movie' ? details.title : details.name,
+                        poster_path: details.poster_path,
+                        backdrop_path: details.backdrop_path,
+                        vote_average: details.vote_average,
+                        season: config.season,
+                        episode: config.episode,
+                        progress: config.initialTime || 0,
+                        duration: 0
+                    });
+                }
+            } catch (e) {
+                console.error("Error fetching details for player", e);
             }
-        });
+        };
+        fetchDetails();
     }
   };
 

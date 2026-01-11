@@ -1,22 +1,23 @@
+
 import React, { useEffect, useState, useRef, createContext, useContext } from 'react';
-import Home from './pages/Home';
-import Search from './pages/Search';
-import MovieDetails from './pages/MovieDetails';
-import TVDetails from './pages/TVDetails';
-import Welcome from './pages/Welcome';
-import Library from './pages/Library';
-import Downloads from './pages/Downloads';
-import ProfileGateway from './pages/ProfileGateway';
-import PrivacyPolicy from './pages/PrivacyPolicy';
-import CollectionDetails from './pages/CollectionDetails';
-import GenreExplorer from './pages/GenreExplorer';
-import SplashScreen from './components/SplashScreen'; 
-import AppDownloadModal from './components/AppDownloadModal';
-import CustomVideoPlayer from './components/CustomVideoPlayer'; 
-import { tmdb } from './services/tmdbService';
-import { storageService } from './services/storageService';
-import { supabase } from './services/supabase';
-import { Profile, Movie } from './types';
+import Home from '../pages/Home';
+import Search from '../pages/Search';
+import MovieDetails from '../pages/MovieDetails';
+import TVDetails from '../pages/TVDetails';
+import Welcome from '../pages/Welcome';
+import Library from '../pages/Library';
+import Downloads from '../pages/Downloads';
+import ProfileGateway from '../pages/ProfileGateway';
+import PrivacyPolicy from '../pages/PrivacyPolicy';
+import CollectionDetails from '../pages/CollectionDetails';
+import GenreExplorer from '../pages/GenreExplorer';
+import SplashScreen from '../components/SplashScreen'; 
+import AppDownloadModal from '../components/AppDownloadModal';
+import CustomVideoPlayer from '../components/CustomVideoPlayer'; 
+import { tmdb } from '../services/tmdbService';
+import { storageService } from '../services/storageService';
+import { supabase } from '../services/supabase';
+import { Profile, Movie, Episode } from '../types';
 
 export const ProfileContext = createContext<Profile | null>(null);
 
@@ -194,11 +195,11 @@ const App: React.FC = () => {
   }, [showSplash, session, currentProfile]);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
       setSession(session);
       setLoading(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, session: any) => {
       setSession(session);
       if (!session) setCurrentProfile(null);
     });
@@ -249,7 +250,7 @@ const App: React.FC = () => {
             if (playerState.type === 'tv' && playerState.tmdbId && playerState.season && playerState.episode) {
                 promises.push(
                     tmdb.getTVSeason(String(playerState.tmdbId), playerState.season)
-                        .then(seasonEpisodes => {
+                        .then((seasonEpisodes: Episode[]) => {
                             if (seasonEpisodes) {
                                 const currentSeasonEpisodesCount = seasonEpisodes.length;
                                 if (playerState.episode && playerState.episode < currentSeasonEpisodesCount) {
@@ -272,8 +273,8 @@ const App: React.FC = () => {
             if (playerState.tmdbId) {
                 promises.push(
                     tmdb.getRecommendations(String(playerState.tmdbId), playerState.type)
-                        .then(recs => setPlayerRecommendations(recs.slice(0, 5)))
-                        .catch(e => console.error(e))
+                        .then((recs: Movie[]) => setPlayerRecommendations(recs.slice(0, 5)))
+                        .catch((e: any) => console.error(e))
                 );
             }
             
@@ -321,33 +322,41 @@ const App: React.FC = () => {
 
     // Carrega detalhes em segundo plano para não atrasar a abertura do player
     if (currentProfile && config.tmdbId) {
-        const detailsPromise = config.type === 'movie' 
-            ? tmdb.getMovieDetails(String(config.tmdbId))
-            : tmdb.getTVDetails(String(config.tmdbId));
+        const fetchDetails = async () => {
+            let details: any = null;
+            try {
+                if (config.type === 'movie') {
+                    details = await tmdb.getMovieDetails(String(config.tmdbId));
+                } else {
+                    details = await tmdb.getTVDetails(String(config.tmdbId));
+                }
 
-        detailsPromise.then((details: any) => {
-            if (details) {
-                setPlayerState(prev => prev ? ({
-                    ...prev,
-                    title: config.type === 'movie' ? details.title : details.name,
-                    backdrop: details.backdrop_path,
-                    id: config.type === 'movie' ? (details.imdb_id || String(config.tmdbId)) : String(config.tmdbId)
-                }) : null);
+                if (details) {
+                    setPlayerState(prev => prev ? ({
+                        ...prev,
+                        title: config.type === 'movie' ? details.title : details.name,
+                        backdrop: details.backdrop_path,
+                        id: config.type === 'movie' ? (details.imdb_id || String(config.tmdbId)) : String(config.tmdbId)
+                    }) : null);
 
-                storageService.addToHistory(currentProfile.id, {
-                    id: config.tmdbId,
-                    type: config.type,
-                    title: config.type === 'movie' ? details.title : details.name,
-                    poster_path: details.poster_path,
-                    backdrop_path: details.backdrop_path,
-                    vote_average: details.vote_average,
-                    season: config.season,
-                    episode: config.episode,
-                    progress: config.initialTime || 0,
-                    duration: 0
-                });
+                    storageService.addToHistory(currentProfile.id, {
+                        id: config.tmdbId,
+                        type: config.type,
+                        title: config.type === 'movie' ? details.title : details.name,
+                        poster_path: details.poster_path,
+                        backdrop_path: details.backdrop_path,
+                        vote_average: details.vote_average,
+                        season: config.season,
+                        episode: config.episode,
+                        progress: config.initialTime || 0,
+                        duration: 0
+                    });
+                }
+            } catch (e) {
+                console.error(e);
             }
-        });
+        };
+        fetchDetails();
     }
   };
 
@@ -416,9 +425,9 @@ const App: React.FC = () => {
     if (!currentProfile) return <ProfileGateway onProfileSelect={handleProfileSelect} onLogout={handleLogout} />;
 
     const content = (() => {
-        if (!hash || hash === '#/') return <Home onMovieClick={handleItemClick} onPlayVideo={handlePlayRequest} />;
-        if (hash.startsWith('#/movie/')) return <MovieDetails id={hash.replace('#/movie/', '')} onPlay={(c) => handlePlayRequest({...c, tmdbId: Number(hash.replace('#/movie/', ''))})} />;
-        if (hash.startsWith('#/tv/')) return <TVDetails id={hash.replace('#/tv/', '')} onPlay={(c) => handlePlayRequest({...c, tmdbId: Number(hash.replace('#/tv/', ''))})} />;
+        if (!hash || hash === '#/') return <Home onMovieClick={handleItemClick} onPlayVideo={(c: any) => handlePlayRequest(c)} />;
+        if (hash.startsWith('#/movie/')) return <MovieDetails id={hash.replace('#/movie/', '')} onPlay={(c: any) => handlePlayRequest({...c, tmdbId: Number(hash.replace('#/movie/', ''))})} />;
+        if (hash.startsWith('#/tv/')) return <TVDetails id={hash.replace('#/tv/', '')} onPlay={(c: any) => handlePlayRequest({...c, tmdbId: Number(hash.replace('#/tv/', ''))})} />;
         if (hash.startsWith('#/collection/')) return <CollectionDetails id={hash.replace('#/collection/', '')} onMovieClick={handleItemClick} />;
         if (hash.startsWith('#/genre/')) {
             const [id, name] = hash.replace('#/genre/', '').split('/');
@@ -427,7 +436,7 @@ const App: React.FC = () => {
         if (hash.startsWith('#/search/')) return <Search query={decodeURIComponent(hash.replace('#/search/', ''))} onMovieClick={handleItemClick} />;
         if (hash === '#/library') return <Library onMovieClick={handleItemClick} />;
         if (hash === '#/downloads') return <Downloads />;
-        return <Home onMovieClick={handleItemClick} onPlayVideo={handlePlayRequest} />;
+        return <Home onMovieClick={handleItemClick} onPlayVideo={(c: any) => handlePlayRequest(c)} />;
     })();
 
     return <div key={hash} className="page-enter w-full">{content}</div>;

@@ -4,6 +4,7 @@ import { storageService } from '../services/storageService';
 import { tmdb } from '../services/tmdbService';
 import { subtitleService } from '../services/subtitleService';
 import { Movie, Episode, SubtitleCue, SubtitleResult } from '../types';
+import Hls from 'hls.js';
 
 interface CustomVideoPlayerProps {
   src: string;
@@ -29,7 +30,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const hlsRef = useRef<any>(null);
+  const hlsRef = useRef<Hls | null>(null);
   
   // Player States
   const [playing, setPlaying] = useState(false);
@@ -44,12 +45,14 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [hasResumed, setHasResumed] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const [errorStatus, setErrorStatus] = useState<string>("");
   
   // Subtitle States
   const [subtitles, setSubtitles] = useState<SubtitleCue[]>([]);
   const [activeSubtitle, setActiveSubtitle] = useState<string>("");
   const [isSubtitleEnabled, setIsSubtitleEnabled] = useState(false);
-  const [subtitleOffset, setSubtitleOffset] = useState(0); // Sync delay in seconds
+  const [subtitleOffset, setSubtitleOffset] = useState(0);
   const [showSubtitleModal, setShowSubtitleModal] = useState(false);
   const [subtitleSearchResults, setSubtitleSearchResults] = useState<SubtitleResult[]>([]);
   const [isSearchingSubs, setIsSearchingSubs] = useState(false);
@@ -58,7 +61,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const [seasonEpisodes, setSeasonEpisodes] = useState<Episode[]>([]);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  // Volume & Brightness (Visuals)
+  // Volume & Brightness
   const [volume, setVolume] = useState(1);
   const [brightness, setBrightness] = useState(1);
   const [gestureIndicator, setGestureIndicator] = useState<{ type: 'volume' | 'brightness', value: number } | null>(null);
@@ -88,7 +91,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       };
   }, []);
 
-  // --- CONTROLS VISIBILITY LOGIC ---
+  // --- CONTROLS VISIBILITY ---
   const showControlsTemporarily = () => {
       if (isLocked) {
           setShowUnlockButton(true);
@@ -133,16 +136,17 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     loadData();
   }, [tmdbId, type, season, episode]);
 
-  // --- VIDEO SETUP ---
+  // --- HLS VIDEO SETUP ---
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
     setIsLoading(true);
+    setErrorStatus("");
     setHasResumed(false);
     
-    // HLS Support Check
-    const isHls = src.includes('.m3u8') || src.includes('.txt');
+    // Check if URL suggests HLS (including .txt trick from sniffer)
+    const isHls = src.includes('.m3u8') || src.includes('.txt') || src.includes('/hls/');
 
     const attemptResume = () => {
         if (!hasResumed && initialTime > 10) {
@@ -151,29 +155,83 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
         }
     };
 
-    if (isHls && window.Hls && window.Hls.isSupported()) {
-        const hls = new window.Hls({ enableWorker: true, lowLatencyMode: true });
-        hlsRef.current = hls;
-        hls.loadSource(src);
-        hls.attachMedia(video);
-        hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
-            attemptResume();
-            video.play().catch(() => {});
-        });
-        hls.on(window.Hls.Events.ERROR, (_e: any, data: any) => {
-            if(data.fatal) {
-               if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
-               else onErrorFallback(); 
+    const handleHlsError = (event: any, data: any) => {
+        if (data.fatal) {
+            console.warn(`⚠️ HLS Fatal Error: ${data.type}`);
+            switch (data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                    if (retryCount < 3) {
+                        console.log(`🔄 Tentando reconectar (Tentativa ${retryCount + 1}/3)...`);
+                        setErrorStatus("Conexão instável, reconectando...");
+                        hlsRef.current?.startLoad();
+                        setRetryCount(prev => prev + 1);
+                    } else {
+                        setErrorStatus("Erro de Rede. Tentando fallback...");
+                        onErrorFallback();
+                    }
+                    break;
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                    console.log("🔄 Tentando recuperar mídia...");
+                    hlsRef.current?.recoverMediaError();
+                    break;
+                default:
+                    if (retryCount < 3) {
+                         hlsRef.current?.destroy();
+                         initHls(); // Re-init
+                         setRetryCount(prev => prev + 1);
+                    } else {
+                         onErrorFallback();
+                    }
+                    break;
             }
-        });
-    } else {
-        video.src = src;
-        video.load();
-    }
+        }
+    };
+
+    const initHls = () => {
+        if (Hls.isSupported()) {
+            const hls = new Hls({
+                enableWorker: true,
+                lowLatencyMode: true,
+                backBufferLength: 90,
+                maxBufferLength: 30, // Mais buffer para evitar stutters
+                startLevel: -1, // Auto
+                manifestLoadingTimeOut: 20000,
+                manifestLoadingMaxRetry: 3,
+                levelLoadingMaxRetry: 3,
+                fragLoadingMaxRetry: 3,
+            });
+
+            hlsRef.current = hls;
+            hls.loadSource(src);
+            hls.attachMedia(video);
+            
+            hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                console.log("✅ HLS Manifest Parsed");
+                setErrorStatus("");
+                attemptResume();
+                video.play().catch(e => console.log("Autoplay blocked:", e));
+            });
+
+            hls.on(Hls.Events.ERROR, handleHlsError);
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            // Safari / Native HLS
+            video.src = src;
+            video.addEventListener('loadedmetadata', attemptResume);
+            video.play().catch(() => {});
+        } else {
+            // Direct file (mp4, mkv)
+            video.src = src;
+            video.load();
+            video.play().catch(() => {});
+        }
+    };
+
+    initHls();
 
     const onPlay = () => { 
         setPlaying(true); 
         setIsLoading(false);
+        setErrorStatus("");
         if (onPlayerStable) onPlayerStable();
         try { if(window.Android?.onVideoPlaying) window.Android.onVideoPlaying(src); } catch(e){}
     };
@@ -182,9 +240,8 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     const onTimeUpdate = () => {
         const time = video.currentTime;
         setCurrentTime(time);
-        setDuration(video.duration || 0);
+        if(video.duration) setDuration(video.duration);
 
-        // Subtitle Sync Logic
         if (isSubtitleEnabled && subtitles.length > 0) {
             const adjustedTime = time + subtitleOffset;
             const currentCue = subtitles.find(cue => adjustedTime >= cue.start && adjustedTime <= cue.end);
@@ -207,13 +264,16 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     video.addEventListener('loadedmetadata', onLoadedMetadata);
 
     return () => {
-        if (hlsRef.current) hlsRef.current.destroy();
+        if (hlsRef.current) {
+            hlsRef.current.destroy();
+        }
         video.removeEventListener('play', onPlay);
         video.removeEventListener('pause', onPause);
         video.removeEventListener('timeupdate', onTimeUpdate);
         video.removeEventListener('loadedmetadata', onLoadedMetadata);
+        setRetryCount(0);
     };
-  }, [src, isSubtitleEnabled, subtitles, subtitleOffset]);
+  }, [src]);
 
   // Save Progress
   useEffect(() => {
@@ -271,7 +331,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   };
   
   const formatTime = (t: number) => {
-      if (!t) return "0:00";
+      if (!t || isNaN(t)) return "0:00";
       const m = Math.floor((t % 3600) / 60);
       const s = Math.floor(t % 60);
       const h = Math.floor(t / 3600);
@@ -307,7 +367,6 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       }
   };
 
-  // Actions
   const handleDownload = () => {
     if (isDownloading) return;
     setIsDownloading(true);
@@ -337,7 +396,12 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
         style={{ filter: `brightness(${brightness})` }}
         onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
     >
-        <video ref={videoRef} className={`w-full h-full object-${fitMode} transition-all duration-300`} playsInline />
+        <video 
+            ref={videoRef} 
+            className={`w-full h-full object-${fitMode} transition-all duration-300`} 
+            playsInline 
+            crossOrigin="anonymous" // Ajuda com alguns problemas de CORS
+        />
 
         {/* SUBTITLE OVERLAY */}
         {isSubtitleEnabled && activeSubtitle && (
@@ -348,12 +412,15 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
             </div>
         )}
 
-        {/* LOADING */}
+        {/* LOADING & ERROR */}
         {isLoading && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 bg-black/40 backdrop-blur-sm animate-fade-in">
                  <div className="flex flex-col items-center gap-4">
                      <div className="w-16 h-16 border-4 border-white/10 border-t-primary rounded-full animate-spin shadow-[0_0_30px_rgba(242,13,242,0.4)]"></div>
-                     <p className="text-white/60 text-xs font-bold tracking-[0.2em] animate-pulse">CARREGANDO</p>
+                     <p className="text-white/60 text-xs font-bold tracking-[0.2em] animate-pulse">
+                         {errorStatus || "CARREGANDO"}
+                     </p>
+                     {retryCount > 0 && <p className="text-yellow-400 text-xs font-mono">Tentativa {retryCount}/3</p>}
                  </div>
             </div>
         )}
@@ -446,7 +513,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                                     className="absolute inset-0 w-full h-full opacity-0 z-20 cursor-pointer" 
                                  />
                                  <div className="w-full h-full bg-white/10 rounded-full overflow-hidden">
-                                     <div className="h-full bg-gradient-to-r from-primary to-purple-500 relative transition-all shadow-[0_0_15px_#f20df2]" style={{ width: `${(currentTime / duration) * 100}%` }}>
+                                     <div className="h-full bg-gradient-to-r from-primary to-purple-500 relative transition-all shadow-[0_0_15px_#f20df2]" style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}>
                                          <div className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg scale-0 group-hover:scale-100 transition-transform border-2 border-primary"></div>
                                      </div>
                                  </div>

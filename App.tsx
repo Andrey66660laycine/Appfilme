@@ -59,9 +59,8 @@ const App: React.FC = () => {
   const [showAds, setShowAds] = useState(false);
   const [adTimer, setAdTimer] = useState(15);
   
-  // Padrão 'superflix'
-  const [activeServer, setActiveServer] = useState<'playerflix' | 'superflix'>('superflix');
   const [videoFoundOverlay, setVideoFoundOverlay] = useState(false);
+  const [decryptionProgress, setDecryptionProgress] = useState(0);
 
   const [welcomeBackToast, setWelcomeBackToast] = useState<{ visible: boolean; item: any }>({ visible: false, item: null });
   
@@ -90,13 +89,13 @@ const App: React.FC = () => {
 
   const validateVideoDuration = (url: string): Promise<boolean> => {
       return new Promise((resolve) => {
-          if (url.startsWith('blob:')) { resolve(true); return; }
+          if (url.startsWith('blob:') || url.includes('.m3u8') || url.includes('.txt')) { resolve(true); return; }
           const tempVideo = document.createElement('video');
           tempVideo.preload = 'metadata';
           tempVideo.muted = true;
           const timeout = setTimeout(() => {
               tempVideo.src = "";
-              resolve(true);
+              resolve(true); // Se der timeout, assume que é stream valido
           }, 3000);
           tempVideo.onloadedmetadata = () => {
               clearTimeout(timeout);
@@ -115,7 +114,12 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    const VIDEO_PATTERNS = [/\.mp4($|\?)/i, /\.mkv($|\?)/i, /\.avi($|\?)/i, /\.m3u8($|\?)/i, /\.mpd($|\?)/i, /master\.txt/i, /\/hls\//i, /video\/mp4/i];
+    // Regex aprimorada para incluir .txt (HLS master playlist disfarçada)
+    const VIDEO_PATTERNS = [
+        /\.mp4($|\?)/i, /\.mkv($|\?)/i, /\.avi($|\?)/i, 
+        /\.m3u8($|\?)/i, /\.mpd($|\?)/i, /master\.txt($|\?)/i, 
+        /\/hls\//i, /video\/mp4/i, /\.xyz\/m3\//i
+    ];
     const AD_KEYWORDS = ['doubleclick', 'googleads', 'googlesyndication', 'facebook', 'analytics', 'pixel', 'tracker', 'adsystem', 'banner', 'pop', 'juicyads'];
 
     window.receberVideo = async (url: string) => {
@@ -129,15 +133,32 @@ const App: React.FC = () => {
             const isLongEnough = await validateVideoDuration(url);
             if (!isLongEnough) return; 
 
-            console.log("✅ VÍDEO VÁLIDO:", url);
+            console.log("✅ VÍDEO DETECTADO:", url);
+            
             setNativeVideoUrl(prev => {
                 if (prev === url) return prev;
+                
+                // Animação de "Interceptação"
                 setVideoFoundOverlay(true);
-                setTimeout(() => {
-                    setNativeVideoUrl(url);
-                    setIsIframeLoaded(false); 
-                    setTimeout(() => setVideoFoundOverlay(false), 500);
-                }, 1500);
+                setDecryptionProgress(0);
+                
+                let prog = 0;
+                const interval = setInterval(() => {
+                    prog += Math.random() * 25;
+                    if (prog >= 100) {
+                        prog = 100;
+                        clearInterval(interval);
+                        
+                        setNativeVideoUrl(url);
+                        setIsIframeLoaded(false);
+                        
+                        setTimeout(() => {
+                            setVideoFoundOverlay(false);
+                        }, 800);
+                    }
+                    setDecryptionProgress(prog);
+                }, 100);
+
                 return prev;
             });
         }
@@ -239,16 +260,6 @@ const App: React.FC = () => {
     }
   }, [playerState]);
 
-  useEffect(() => {
-      if (showAds && adContainerRef.current) {
-          setAdTimer(15);
-          const timerInterval = setInterval(() => {
-              setAdTimer(prev => prev > 0 ? prev - 1 : 0);
-          }, 1000);
-          return () => clearInterval(timerInterval);
-      }
-  }, [showAds]);
-
   const handleStartApp = () => { };
   const handleLogout = async () => { await supabase.auth.signOut(); setCurrentProfile(null); };
   const handleProfileSelect = (profile: Profile) => { setCurrentProfile(profile); window.location.hash = '#/'; };
@@ -276,7 +287,6 @@ const App: React.FC = () => {
     setFailedUrls(new Set()); 
     setIsPlayerStable(false);
     setPendingPlayerState(null);
-    setActiveServer('superflix'); 
 
     if (loaderTimeoutRef.current) clearTimeout(loaderTimeoutRef.current);
     loaderTimeoutRef.current = window.setTimeout(() => { setIsIframeLoaded(true); }, 5000);
@@ -346,17 +356,6 @@ const App: React.FC = () => {
       startVideoPlayer(config);
   };
 
-  const handleConfirmNotice = () => {
-      if (dontShowNoticeAgain) localStorage.setItem('void_skip_server_notice', 'true');
-      setShowServerNotice(false);
-      if (pendingPlayerState) startVideoPlayer(pendingPlayerState);
-  };
-
-  const closeAdsAndPlay = () => {
-      setShowAds(false);
-      if (pendingPlayerState) startVideoPlayer(pendingPlayerState);
-  };
-
   const closeNativePlayer = () => {
       setNativeVideoUrl(null);
       setPlayerState(null);
@@ -378,12 +377,19 @@ const App: React.FC = () => {
 
   const getEmbedUrl = () => {
     if (!playerState) return '';
-    if (activeServer === 'superflix') {
-        if (playerState.type === 'movie') return `https://superflixapi.buzz/filme/${playerState.id}`;
-        return `https://superflixapi.buzz/serie/${playerState.tmdbId}/${playerState.season}/${playerState.episode}`;
+    
+    // API Unificada: PlayerFlix API
+    if (playerState.type === 'movie') {
+        // Para filmes, usamos o ID do IMDB (passado via MovieDetails)
+        return `https://playerflixapi.com/filme/${playerState.id}`;
     }
-    if (playerState.type === 'movie') return `https://playerflixapi.com/filme/${playerState.tmdbId}`;
-    return `https://playerflixapi.com/serie/${playerState.tmdbId}/${playerState.season}/${playerState.episode}`;
+    
+    if (playerState.type === 'tv') {
+        // Para séries, usamos o TMDB ID (passado via TVDetails)
+        return `https://playerflixapi.com/serie/${playerState.tmdbId}/${playerState.season}/${playerState.episode}`;
+    }
+
+    return '';
   };
 
   const renderContent = () => {
@@ -392,19 +398,22 @@ const App: React.FC = () => {
     if (showSplash) return <SplashScreen onFinish={() => setShowSplash(false)} />;
     if (!currentProfile) return <ProfileGateway onProfileSelect={handleProfileSelect} onLogout={handleLogout} />;
 
-    if (!hash || hash === '#/') return <Home onMovieClick={handleItemClick} onPlayVideo={handlePlayRequest} />;
-    if (hash.startsWith('#/movie/')) return <MovieDetails id={hash.replace('#/movie/', '')} onPlay={(c) => handlePlayRequest({...c, tmdbId: Number(hash.replace('#/movie/', ''))})} />;
-    if (hash.startsWith('#/tv/')) return <TVDetails id={hash.replace('#/tv/', '')} onPlay={(c) => handlePlayRequest({...c, tmdbId: Number(hash.replace('#/tv/', ''))})} />;
-    if (hash.startsWith('#/collection/')) return <CollectionDetails id={hash.replace('#/collection/', '')} onMovieClick={handleItemClick} />;
-    if (hash.startsWith('#/genre/')) {
-        const [id, name] = hash.replace('#/genre/', '').split('/');
-        return <GenreExplorer genreId={Number(id)} genreName={decodeURIComponent(name || '')} onMovieClick={handleItemClick} />;
-    }
-    if (hash.startsWith('#/search/')) return <Search query={decodeURIComponent(hash.replace('#/search/', ''))} onMovieClick={handleItemClick} />;
-    if (hash === '#/library') return <Library onMovieClick={handleItemClick} />;
-    if (hash === '#/downloads') return <Downloads />;
-    
-    return <Home onMovieClick={handleItemClick} onPlayVideo={handlePlayRequest} />;
+    const content = (() => {
+        if (!hash || hash === '#/') return <Home onMovieClick={handleItemClick} onPlayVideo={handlePlayRequest} />;
+        if (hash.startsWith('#/movie/')) return <MovieDetails id={hash.replace('#/movie/', '')} onPlay={(c) => handlePlayRequest({...c, tmdbId: Number(hash.replace('#/movie/', ''))})} />;
+        if (hash.startsWith('#/tv/')) return <TVDetails id={hash.replace('#/tv/', '')} onPlay={(c) => handlePlayRequest({...c, tmdbId: Number(hash.replace('#/tv/', ''))})} />;
+        if (hash.startsWith('#/collection/')) return <CollectionDetails id={hash.replace('#/collection/', '')} onMovieClick={handleItemClick} />;
+        if (hash.startsWith('#/genre/')) {
+            const [id, name] = hash.replace('#/genre/', '').split('/');
+            return <GenreExplorer genreId={Number(id)} genreName={decodeURIComponent(name || '')} onMovieClick={handleItemClick} />;
+        }
+        if (hash.startsWith('#/search/')) return <Search query={decodeURIComponent(hash.replace('#/search/', ''))} onMovieClick={handleItemClick} />;
+        if (hash === '#/library') return <Library onMovieClick={handleItemClick} />;
+        if (hash === '#/downloads') return <Downloads />;
+        return <Home onMovieClick={handleItemClick} onPlayVideo={handlePlayRequest} />;
+    })();
+
+    return <div key={hash} className="page-enter w-full">{content}</div>;
   };
 
   const isSearchActive = hash.startsWith('#/search/');
@@ -443,32 +452,25 @@ const App: React.FC = () => {
           </div>
       )}
 
-      {/* VIDEO FOUND OVERLAY (NEW CINEMATIC LOADER) */}
+      {/* INTERCEPTION / SIGNAL DECRYPTION OVERLAY */}
       {videoFoundOverlay && (
-          <div className="fixed inset-0 z-[140] bg-[#050505] flex flex-col items-center justify-center animate-fade-in pointer-events-none overflow-hidden">
-              <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03]"></div>
+          <div className="fixed inset-0 z-[140] bg-[#000000] flex flex-col items-center justify-center pointer-events-none font-mono text-green-500 overflow-hidden">
+              <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-10 bg-[length:100%_2px,3px_100%] pointer-events-none"></div>
               
-              <div className="relative w-24 h-24 mb-8">
-                  <div className="absolute inset-0 border-t-2 border-primary rounded-full animate-spin"></div>
-                  <div className="absolute inset-2 border-r-2 border-purple-500 rounded-full animate-spin-reverse opacity-70"></div>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="material-symbols-rounded text-3xl text-white animate-pulse">lock_open</span>
+              <div className="w-full max-w-md px-8 relative z-20 flex flex-col gap-6">
+                  <div className="flex justify-between items-end border-b border-green-500/30 pb-2 mb-2">
+                      <span className="text-xs uppercase tracking-widest animate-pulse">Sinal HLS Detectado...</span>
+                      <span className="text-xl font-bold">{Math.round(decryptionProgress)}%</span>
+                  </div>
+                  <div className="w-full h-1 bg-green-900/30 rounded-full overflow-hidden">
+                      <div className="h-full bg-green-500 shadow-[0_0_10px_#00ff00]" style={{ width: `${decryptionProgress}%`, transition: 'width 0.1s linear' }}></div>
+                  </div>
+                  <div className="text-[10px] opacity-60 leading-tight space-y-1 h-20 overflow-hidden">
+                      <p>&gt; HLS_MANIFEST: PARSED</p>
+                      <p>&gt; BYPASSING_CORS: RETRY_MODE_ACTIVE</p>
+                      <p>&gt; DECRYPTING_STREAM_KEY... OK</p>
                   </div>
               </div>
-
-              <h2 className="text-3xl font-display font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-white/50 tracking-[0.2em] uppercase animate-pulse">
-                  Sincronizando
-              </h2>
-              
-              <div className="flex gap-1 mt-4">
-                  <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{animationDelay: '0ms'}}></span>
-                  <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{animationDelay: '100ms'}}></span>
-                  <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{animationDelay: '200ms'}}></span>
-              </div>
-              
-              <p className="absolute bottom-10 text-white/20 text-[10px] uppercase tracking-widest font-mono">
-                  Conexão Segura Estabelecida
-              </p>
           </div>
       )}
 
@@ -501,47 +503,26 @@ const App: React.FC = () => {
                 <button onClick={closeNativePlayer} className="pointer-events-auto w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/5 flex items-center justify-center hover:bg-white/10 transition-colors text-white">
                     <span className="material-symbols-rounded">arrow_back</span>
                 </button>
-                
-                {/* Minimal Server Switcher */}
-                <div className="pointer-events-auto flex gap-2 p-1 bg-black/60 backdrop-blur-xl border border-white/5 rounded-full">
-                    <button onClick={() => { setActiveServer('superflix'); setIsIframeLoaded(false); }} className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${activeServer === 'superflix' ? 'bg-white text-black' : 'text-white/40 hover:text-white'}`}>
-                        Server Fast
-                    </button>
-                    <button onClick={() => { setActiveServer('playerflix'); setIsIframeLoaded(false); }} className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${activeServer === 'playerflix' ? 'bg-white text-black' : 'text-white/40 hover:text-white'}`}>
-                        Backup
-                    </button>
-                </div>
             </div>
 
-            {/* BLACK LOADING OVERLAY (NO POLLUTION) */}
+            {/* BLACK LOADING OVERLAY */}
             <div className={`absolute inset-0 z-30 flex flex-col items-center justify-center bg-black transition-opacity duration-1000 ease-in-out pointer-events-none ${isIframeLoaded ? 'opacity-0' : 'opacity-100'}`}>
                 {playerState.backdrop && (
                     <div className="absolute inset-0 bg-cover bg-center opacity-20 blur-2xl animate-pulse-slow scale-110" style={{backgroundImage: `url(${tmdb.getBackdropUrl(playerState.backdrop)})`}}></div>
                 )}
                 <div className="relative z-10 flex flex-col items-center">
-                    {/* Minimalist Loader */}
                     <div className="w-16 h-16 relative">
                         <div className="absolute inset-0 border-2 border-white/10 rounded-full"></div>
                         <div className="absolute inset-0 border-t-2 border-primary rounded-full animate-spin"></div>
                     </div>
                     <h2 className="mt-8 text-white font-display font-bold text-xl tracking-tight">{playerState.title}</h2>
-                    <p className="text-white/40 text-xs mt-2 uppercase tracking-widest font-medium">Conectando...</p>
+                    <p className="text-white/40 text-xs mt-2 uppercase tracking-widest font-medium">Carregando Player...</p>
                 </div>
             </div>
             
-            {/* IFRAME CONTAINER */}
+            {/* IFRAME */}
             <div className="flex-1 w-full h-full relative bg-black">
-                 {/* SUBTLE NOTICE (DISAPPEARS) */}
-                 {isIframeLoaded && (
-                     <div className="absolute bottom-10 left-0 w-full flex justify-center z-20 pointer-events-none animate-slide-up">
-                         <div className="bg-black/60 backdrop-blur-md text-white/70 px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-wide border border-white/5">
-                             Dica: Se travar, alterne o servidor acima.
-                         </div>
-                     </div>
-                 )}
-
                  <iframe 
-                    key={activeServer} 
                     src={getEmbedUrl()} 
                     width="100%" height="100%" 
                     frameBorder="0" allowFullScreen 
@@ -550,8 +531,7 @@ const App: React.FC = () => {
                     allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
                     referrerPolicy="no-referrer"
                     onLoad={() => {
-                        // Small delay to ensure render
-                        setTimeout(() => setIsIframeLoaded(true), 1000);
+                        setTimeout(() => setIsIframeLoaded(true), 1500);
                     }}
                  ></iframe>
             </div>

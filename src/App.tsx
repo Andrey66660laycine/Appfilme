@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef, createContext, useContext } from 'react';
 import Home from './pages/Home';
 import Search from './pages/Search';
@@ -322,12 +321,11 @@ const App: React.FC = () => {
 
     // Carrega detalhes em segundo plano para não atrasar a abertura do player
     if (currentProfile && config.tmdbId) {
-        tmdb.getMovieDetails(String(config.tmdbId)).then(details => {
-             if (!details && config.type === 'tv') {
-                 return tmdb.getTVDetails(String(config.tmdbId));
-             }
-             return details;
-        }).then((details: any) => {
+        const detailsPromise = config.type === 'movie' 
+            ? tmdb.getMovieDetails(String(config.tmdbId))
+            : tmdb.getTVDetails(String(config.tmdbId));
+
+        detailsPromise.then((details: any) => {
             if (details) {
                 setPlayerState(prev => prev ? ({
                     ...prev,

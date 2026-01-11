@@ -145,8 +145,10 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     setErrorStatus("");
     setHasResumed(false);
     
-    // Check if URL suggests HLS (including .txt trick from sniffer)
-    const isHls = src.includes('.m3u8') || src.includes('.txt') || src.includes('/hls/');
+    // Suporte explícito a .txt como master playlist (comum em servidores de sniffer)
+    const isTxtHls = src.includes('.txt') || src.includes('master.txt');
+    const isStandardHls = src.includes('.m3u8') || src.includes('/hls/');
+    const shouldUseHlsJs = isTxtHls || isStandardHls;
 
     const attemptResume = () => {
         if (!hasResumed && initialTime > 10) {
@@ -156,49 +158,64 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     };
 
     const handleHlsError = (event: any, data: any) => {
-        if (data.fatal) {
-            console.warn(`⚠️ HLS Fatal Error: ${data.type}`);
-            switch (data.type) {
-                case Hls.ErrorTypes.NETWORK_ERROR:
-                    if (retryCount < 3) {
-                        console.log(`🔄 Tentando reconectar (Tentativa ${retryCount + 1}/3)...`);
-                        setErrorStatus("Conexão instável, reconectando...");
-                        hlsRef.current?.startLoad();
-                        setRetryCount(prev => prev + 1);
-                    } else {
-                        setErrorStatus("Erro de Rede. Tentando fallback...");
-                        onErrorFallback();
-                    }
-                    break;
-                case Hls.ErrorTypes.MEDIA_ERROR:
-                    console.log("🔄 Tentando recuperar mídia...");
+        // Ignora erros não fatais
+        if (!data.fatal) return;
+
+        console.warn(`⚠️ HLS Fatal Error: ${data.type}`);
+        
+        const tryRecover = () => {
+            if (retryCount < 4) { // Aumentado para 4 tentativas (Modo agressivo)
+                setRetryCount(prev => prev + 1);
+                console.log(`🔄 Tentando reconectar (Tentativa ${retryCount + 1})...`);
+                
+                if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                    setErrorStatus("Reconectando (CORS Bypass)...");
+                    hlsRef.current?.startLoad();
+                } else {
                     hlsRef.current?.recoverMediaError();
-                    break;
-                default:
-                    if (retryCount < 3) {
-                         hlsRef.current?.destroy();
-                         initHls(); // Re-init
-                         setRetryCount(prev => prev + 1);
-                    } else {
-                         onErrorFallback();
-                    }
-                    break;
+                }
+            } else {
+                setErrorStatus("Falha Crítica. Tentando Embed...");
+                onErrorFallback();
             }
+        };
+
+        switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+                tryRecover();
+                break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+                hlsRef.current?.recoverMediaError();
+                break;
+            default:
+                // Tenta reinicializar do zero
+                hlsRef.current?.destroy();
+                initHls(); 
+                break;
         }
     };
 
     const initHls = () => {
-        if (Hls.isSupported()) {
+        if (Hls.isSupported() && shouldUseHlsJs) {
             const hls = new Hls({
                 enableWorker: true,
                 lowLatencyMode: true,
                 backBufferLength: 90,
-                maxBufferLength: 30, // Mais buffer para evitar stutters
-                startLevel: -1, // Auto
-                manifestLoadingTimeOut: 20000,
-                manifestLoadingMaxRetry: 3,
-                levelLoadingMaxRetry: 3,
-                fragLoadingMaxRetry: 3,
+                // Buffer mais agressivo para .txt/hls instáveis
+                maxBufferLength: 60, 
+                maxMaxBufferLength: 600,
+                startLevel: -1, 
+                // Timeouts rápidos para falhar logo e tentar outro método se necessário
+                manifestLoadingTimeOut: 15000, 
+                manifestLoadingMaxRetry: 4,
+                levelLoadingMaxRetry: 4,
+                fragLoadingMaxRetry: 4,
+                // Tenta forçar xhr com credenciais se falhar (às vezes ajuda com CORS)
+                xhrSetup: (xhr, url) => {
+                    if (isTxtHls && retryCount > 1) {
+                        xhr.withCredentials = false; // Alterna comportamento na tentativa 2+
+                    }
+                }
             });
 
             hlsRef.current = hls;
@@ -219,7 +236,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
             video.addEventListener('loadedmetadata', attemptResume);
             video.play().catch(() => {});
         } else {
-            // Direct file (mp4, mkv)
+            // Direct file (mp4, mkv) ou navegador sem suporte HLS
             video.src = src;
             video.load();
             video.play().catch(() => {});
@@ -420,7 +437,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                      <p className="text-white/60 text-xs font-bold tracking-[0.2em] animate-pulse">
                          {errorStatus || "CARREGANDO"}
                      </p>
-                     {retryCount > 0 && <p className="text-yellow-400 text-xs font-mono">Tentativa {retryCount}/3</p>}
+                     {retryCount > 0 && <p className="text-yellow-400 text-xs font-mono">Tentativa {retryCount}/4</p>}
                  </div>
             </div>
         )}

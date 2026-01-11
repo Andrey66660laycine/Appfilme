@@ -486,10 +486,10 @@ const App: React.FC = () => {
 
                   {/* Random Code Blocks */}
                   <div className="text-[10px] opacity-60 leading-tight space-y-1 h-20 overflow-hidden">
-                      <p>> BYPASS_PROXY: ACTIVE</p>
-                      <p>> INJECTING_HEADERS: {`{ X-Void-Auth: "${Math.random().toString(36).substring(7)}" }`}</p>
-                      <p>> RESOLVING_HOST: 192.168.0.X [SECURE]</p>
-                      <p>> DECRYPTING_STREAM_KEY... OK</p>
+                      <p>&gt; BYPASS_PROXY: ACTIVE</p>
+                      <p>&gt; INJECTING_HEADERS: {`{ X-Void-Auth: "${Math.random().toString(36).substring(7)}" }`}</p>
+                      <p>&gt; RESOLVING_HOST: 192.168.0.X [SECURE]</p>
+                      <p>&gt; DECRYPTING_STREAM_KEY... OK</p>
                   </div>
               </div>
           </div>

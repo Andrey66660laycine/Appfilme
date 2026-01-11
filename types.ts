@@ -123,18 +123,19 @@ export interface DownloadItem {
     localFilename?: string;
 }
 
+// --- SUBTITLES ---
 export interface SubtitleCue {
-  start: number;
-  end: number;
-  text: string;
+    start: number; // seconds
+    end: number;   // seconds
+    text: string;
 }
 
 export interface SubtitleResult {
-  id: string;
-  language: string;
-  format: string;
-  filename: string;
-  url: string;
+    id: string;
+    language: string;
+    url: string;
+    format: 'srt' | 'vtt';
+    filename: string;
 }
 
 declare global {

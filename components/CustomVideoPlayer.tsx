@@ -2,7 +2,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { storageService } from '../services/storageService';
 import { tmdb } from '../services/tmdbService';
-import { Movie, Episode } from '../types';
+import { subtitleService } from '../services/subtitleService';
+import { Movie, Episode, SubtitleCue, SubtitleResult } from '../types';
 
 interface CustomVideoPlayerProps {
   src: string;
@@ -43,6 +44,15 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [hasResumed, setHasResumed] = useState(false);
+  
+  // Subtitle States
+  const [subtitles, setSubtitles] = useState<SubtitleCue[]>([]);
+  const [activeSubtitle, setActiveSubtitle] = useState<string>("");
+  const [isSubtitleEnabled, setIsSubtitleEnabled] = useState(false);
+  const [subtitleOffset, setSubtitleOffset] = useState(0); // Sync delay in seconds
+  const [showSubtitleModal, setShowSubtitleModal] = useState(false);
+  const [subtitleSearchResults, setSubtitleSearchResults] = useState<SubtitleResult[]>([]);
+  const [isSearchingSubs, setIsSearchingSubs] = useState(false);
   
   // Data
   const [seasonEpisodes, setSeasonEpisodes] = useState<Episode[]>([]);
@@ -89,7 +99,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
 
       setShowControls(true);
       if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-      if (playing && !showSidePanel) {
+      if (playing && !showSidePanel && !showSubtitleModal) {
           controlsTimeoutRef.current = window.setTimeout(() => setShowControls(false), 2500);
       }
   };
@@ -108,7 +118,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
           if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current);
       };
-  }, [playing, isLocked, showSidePanel]);
+  }, [playing, isLocked, showSidePanel, showSubtitleModal]);
 
   // --- DATA LOADING ---
   useEffect(() => {
@@ -170,8 +180,18 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     const onPause = () => setPlaying(false);
     
     const onTimeUpdate = () => {
-        setCurrentTime(video.currentTime);
+        const time = video.currentTime;
+        setCurrentTime(time);
         setDuration(video.duration || 0);
+
+        // Subtitle Sync Logic
+        if (isSubtitleEnabled && subtitles.length > 0) {
+            const adjustedTime = time + subtitleOffset;
+            const currentCue = subtitles.find(cue => adjustedTime >= cue.start && adjustedTime <= cue.end);
+            setActiveSubtitle(currentCue ? currentCue.text : "");
+        } else {
+            setActiveSubtitle("");
+        }
     };
     
     const onLoadedMetadata = () => {
@@ -193,7 +213,7 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
         video.removeEventListener('timeupdate', onTimeUpdate);
         video.removeEventListener('loadedmetadata', onLoadedMetadata);
     };
-  }, [src]);
+  }, [src, isSubtitleEnabled, subtitles, subtitleOffset]);
 
   // Save Progress
   useEffect(() => {
@@ -259,6 +279,34 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       return `${m}:${s.toString().padStart(2,'0')}`;
   };
 
+  // --- SUBTITLE HANDLERS ---
+  const handleSearchSubtitles = async () => {
+      if (!tmdbId) return;
+      setIsSearchingSubs(true);
+      try {
+          const results = await subtitleService.searchSubtitles(tmdbId, season, episode);
+          setSubtitleSearchResults(results);
+      } catch (e) {
+          console.error(e);
+      } finally {
+          setIsSearchingSubs(false);
+      }
+  };
+
+  const handleSelectSubtitle = async (url: string) => {
+      setIsSearchingSubs(true);
+      try {
+          const cues = await subtitleService.parseSubtitle(url);
+          setSubtitles(cues);
+          setIsSubtitleEnabled(true);
+          setShowSubtitleModal(false);
+      } catch (e) {
+          alert("Erro ao carregar legenda");
+      } finally {
+          setIsSearchingSubs(false);
+      }
+  };
+
   // Actions
   const handleDownload = () => {
     if (isDownloading) return;
@@ -290,6 +338,15 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
         onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
     >
         <video ref={videoRef} className={`w-full h-full object-${fitMode} transition-all duration-300`} playsInline />
+
+        {/* SUBTITLE OVERLAY */}
+        {isSubtitleEnabled && activeSubtitle && (
+            <div className="absolute bottom-20 md:bottom-24 left-0 w-full flex justify-center z-10 px-8 pointer-events-none">
+                <div className="bg-black/60 text-[#ffff00] text-center px-4 py-2 rounded-lg text-lg md:text-xl font-medium drop-shadow-md backdrop-blur-sm leading-tight max-w-[80%] whitespace-pre-line animate-fade-in-up">
+                    {activeSubtitle}
+                </div>
+            </div>
+        )}
 
         {/* LOADING */}
         {isLoading && (
@@ -340,6 +397,11 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                     </div>
                     
                     <div className="flex gap-3">
+                        {/* CC Button */}
+                        <button onClick={() => { setShowSubtitleModal(true); handleSearchSubtitles(); }} className={`w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 flex items-center justify-center transition-all backdrop-blur-md ${isSubtitleEnabled ? 'text-primary border-primary/50' : 'text-white'}`}>
+                             <span className="material-symbols-rounded">closed_caption</span>
+                        </button>
+                        
                         <button onClick={handleCast} className="w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 flex items-center justify-center transition-all backdrop-blur-md">
                              <span className="material-symbols-rounded">cast</span>
                         </button>
@@ -461,6 +523,80 @@ const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                  )}
              </div>
         </div>
+
+        {/* SUBTITLE MODAL */}
+        {showSubtitleModal && (
+            <div className="absolute inset-0 z-[70] bg-black/80 backdrop-blur-xl flex items-center justify-center p-4 animate-fade-in">
+                <div className="bg-[#121212] border border-white/10 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
+                    <div className="p-6 border-b border-white/5 flex justify-between items-center">
+                        <h2 className="text-xl font-display font-bold text-white">Legendas</h2>
+                        <button onClick={() => setShowSubtitleModal(false)} className="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center"><span className="material-symbols-rounded">close</span></button>
+                    </div>
+                    
+                    <div className="p-6 space-y-6 flex-1 overflow-y-auto">
+                        
+                        {/* Toggle */}
+                        <div className="flex items-center justify-between bg-white/5 p-4 rounded-xl border border-white/5">
+                            <span className="font-bold text-sm">Exibir Legendas</span>
+                            <div 
+                                onClick={() => setIsSubtitleEnabled(!isSubtitleEnabled)}
+                                className={`w-12 h-6 rounded-full relative cursor-pointer transition-colors ${isSubtitleEnabled ? 'bg-primary' : 'bg-white/20'}`}
+                            >
+                                <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${isSubtitleEnabled ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                            </div>
+                        </div>
+
+                        {/* Sync Control */}
+                        <div>
+                            <p className="text-xs font-bold text-white/50 uppercase mb-3 tracking-wide">Sincronização</p>
+                            <div className="flex items-center gap-4 bg-black/40 p-2 rounded-xl border border-white/5">
+                                <button onClick={() => setSubtitleOffset(prev => prev - 0.5)} className="p-2 hover:bg-white/10 rounded-lg"><span className="material-symbols-rounded">remove</span></button>
+                                <div className="flex-1 text-center font-mono text-sm">
+                                    {subtitleOffset > 0 ? '+' : ''}{subtitleOffset.toFixed(1)}s
+                                </div>
+                                <button onClick={() => setSubtitleOffset(prev => prev + 0.5)} className="p-2 hover:bg-white/10 rounded-lg"><span className="material-symbols-rounded">add</span></button>
+                            </div>
+                        </div>
+
+                        {/* Search Results */}
+                        <div>
+                            <div className="flex justify-between items-center mb-3">
+                                <p className="text-xs font-bold text-white/50 uppercase tracking-wide">Disponível Online</p>
+                                <button onClick={handleSearchSubtitles} className="text-[10px] text-primary hover:underline flex items-center gap-1">
+                                    <span className="material-symbols-rounded text-sm">refresh</span> Recarregar
+                                </button>
+                            </div>
+                            
+                            {isSearchingSubs ? (
+                                <div className="flex justify-center py-8">
+                                    <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                                </div>
+                            ) : subtitleSearchResults.length > 0 ? (
+                                <div className="space-y-2">
+                                    {subtitleSearchResults.map(sub => (
+                                        <button 
+                                            key={sub.id} 
+                                            onClick={() => handleSelectSubtitle(sub.url)}
+                                            className="w-full text-left p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-primary/50 transition-all flex items-center justify-between group"
+                                        >
+                                            <div>
+                                                <p className="text-sm font-bold text-white">{sub.language}</p>
+                                                <p className="text-[10px] text-white/40 truncate max-w-[200px]">{sub.filename}</p>
+                                            </div>
+                                            <span className="material-symbols-rounded text-white/20 group-hover:text-primary">download</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="text-center py-8 text-white/30 text-xs">
+                                    Nenhuma legenda encontrada.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
 
     </div>
   );

@@ -61,10 +61,7 @@ const App: React.FC = () => {
   
   // Padrão 'superflix'
   const [activeServer, setActiveServer] = useState<'playerflix' | 'superflix'>('superflix');
-  
-  // Interception States
   const [videoFoundOverlay, setVideoFoundOverlay] = useState(false);
-  const [decryptionProgress, setDecryptionProgress] = useState(0);
 
   const [welcomeBackToast, setWelcomeBackToast] = useState<{ visible: boolean; item: any }>({ visible: false, item: null });
   
@@ -135,27 +132,12 @@ const App: React.FC = () => {
             console.log("✅ VÍDEO VÁLIDO:", url);
             setNativeVideoUrl(prev => {
                 if (prev === url) return prev;
-                
-                // Start Interception Sequence
                 setVideoFoundOverlay(true);
-                setDecryptionProgress(0);
-                
-                // Animate progress bar
-                let prog = 0;
-                const interval = setInterval(() => {
-                    prog += Math.random() * 20;
-                    if (prog >= 100) {
-                        prog = 100;
-                        clearInterval(interval);
-                        setTimeout(() => {
-                            setNativeVideoUrl(url);
-                            setIsIframeLoaded(false);
-                            setVideoFoundOverlay(false);
-                        }, 500); // Wait a bit at 100%
-                    }
-                    setDecryptionProgress(prog);
-                }, 150);
-
+                setTimeout(() => {
+                    setNativeVideoUrl(url);
+                    setIsIframeLoaded(false); 
+                    setTimeout(() => setVideoFoundOverlay(false), 500);
+                }, 1500);
                 return prev;
             });
         }
@@ -410,23 +392,19 @@ const App: React.FC = () => {
     if (showSplash) return <SplashScreen onFinish={() => setShowSplash(false)} />;
     if (!currentProfile) return <ProfileGateway onProfileSelect={handleProfileSelect} onLogout={handleLogout} />;
 
-    const content = (() => {
-        if (!hash || hash === '#/') return <Home onMovieClick={handleItemClick} onPlayVideo={handlePlayRequest} />;
-        if (hash.startsWith('#/movie/')) return <MovieDetails id={hash.replace('#/movie/', '')} onPlay={(c) => handlePlayRequest({...c, tmdbId: Number(hash.replace('#/movie/', ''))})} />;
-        if (hash.startsWith('#/tv/')) return <TVDetails id={hash.replace('#/tv/', '')} onPlay={(c) => handlePlayRequest({...c, tmdbId: Number(hash.replace('#/tv/', ''))})} />;
-        if (hash.startsWith('#/collection/')) return <CollectionDetails id={hash.replace('#/collection/', '')} onMovieClick={handleItemClick} />;
-        if (hash.startsWith('#/genre/')) {
-            const [id, name] = hash.replace('#/genre/', '').split('/');
-            return <GenreExplorer genreId={Number(id)} genreName={decodeURIComponent(name || '')} onMovieClick={handleItemClick} />;
-        }
-        if (hash.startsWith('#/search/')) return <Search query={decodeURIComponent(hash.replace('#/search/', ''))} onMovieClick={handleItemClick} />;
-        if (hash === '#/library') return <Library onMovieClick={handleItemClick} />;
-        if (hash === '#/downloads') return <Downloads />;
-        return <Home onMovieClick={handleItemClick} onPlayVideo={handlePlayRequest} />;
-    })();
-
-    // Wrapper for Page Transitions
-    return <div key={hash} className="page-enter w-full">{content}</div>;
+    if (!hash || hash === '#/') return <Home onMovieClick={handleItemClick} onPlayVideo={handlePlayRequest} />;
+    if (hash.startsWith('#/movie/')) return <MovieDetails id={hash.replace('#/movie/', '')} onPlay={(c) => handlePlayRequest({...c, tmdbId: Number(hash.replace('#/movie/', ''))})} />;
+    if (hash.startsWith('#/tv/')) return <TVDetails id={hash.replace('#/tv/', '')} onPlay={(c) => handlePlayRequest({...c, tmdbId: Number(hash.replace('#/tv/', ''))})} />;
+    if (hash.startsWith('#/collection/')) return <CollectionDetails id={hash.replace('#/collection/', '')} onMovieClick={handleItemClick} />;
+    if (hash.startsWith('#/genre/')) {
+        const [id, name] = hash.replace('#/genre/', '').split('/');
+        return <GenreExplorer genreId={Number(id)} genreName={decodeURIComponent(name || '')} onMovieClick={handleItemClick} />;
+    }
+    if (hash.startsWith('#/search/')) return <Search query={decodeURIComponent(hash.replace('#/search/', ''))} onMovieClick={handleItemClick} />;
+    if (hash === '#/library') return <Library onMovieClick={handleItemClick} />;
+    if (hash === '#/downloads') return <Downloads />;
+    
+    return <Home onMovieClick={handleItemClick} onPlayVideo={handlePlayRequest} />;
   };
 
   const isSearchActive = hash.startsWith('#/search/');
@@ -465,33 +443,32 @@ const App: React.FC = () => {
           </div>
       )}
 
-      {/* INTERCEPTION / SIGNAL DECRYPTION OVERLAY */}
+      {/* VIDEO FOUND OVERLAY (NEW CINEMATIC LOADER) */}
       {videoFoundOverlay && (
-          <div className="fixed inset-0 z-[140] bg-[#000000] flex flex-col items-center justify-center pointer-events-none font-mono text-green-500 overflow-hidden">
-              {/* Scanlines Effect */}
-              <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-10 bg-[length:100%_2px,3px_100%] pointer-events-none"></div>
+          <div className="fixed inset-0 z-[140] bg-[#050505] flex flex-col items-center justify-center animate-fade-in pointer-events-none overflow-hidden">
+              <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03]"></div>
               
-              <div className="w-full max-w-md px-8 relative z-20 flex flex-col gap-6">
-                  
-                  {/* Status Text */}
-                  <div className="flex justify-between items-end border-b border-green-500/30 pb-2 mb-2">
-                      <span className="text-xs uppercase tracking-widest animate-pulse">Interceptando Sinal...</span>
-                      <span className="text-xl font-bold">{Math.round(decryptionProgress)}%</span>
-                  </div>
-
-                  {/* Progress Bar */}
-                  <div className="w-full h-1 bg-green-900/30 rounded-full overflow-hidden">
-                      <div className="h-full bg-green-500 shadow-[0_0_10px_#00ff00]" style={{ width: `${decryptionProgress}%`, transition: 'width 0.1s linear' }}></div>
-                  </div>
-
-                  {/* Random Code Blocks */}
-                  <div className="text-[10px] opacity-60 leading-tight space-y-1 h-20 overflow-hidden">
-                      <p>&gt; BYPASS_PROXY: ACTIVE</p>
-                      <p>&gt; INJECTING_HEADERS: {`{ X-Void-Auth: "${Math.random().toString(36).substring(7)}" }`}</p>
-                      <p>&gt; RESOLVING_HOST: 192.168.0.X [SECURE]</p>
-                      <p>&gt; DECRYPTING_STREAM_KEY... OK</p>
+              <div className="relative w-24 h-24 mb-8">
+                  <div className="absolute inset-0 border-t-2 border-primary rounded-full animate-spin"></div>
+                  <div className="absolute inset-2 border-r-2 border-purple-500 rounded-full animate-spin-reverse opacity-70"></div>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="material-symbols-rounded text-3xl text-white animate-pulse">lock_open</span>
                   </div>
               </div>
+
+              <h2 className="text-3xl font-display font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-white/50 tracking-[0.2em] uppercase animate-pulse">
+                  Sincronizando
+              </h2>
+              
+              <div className="flex gap-1 mt-4">
+                  <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{animationDelay: '0ms'}}></span>
+                  <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{animationDelay: '100ms'}}></span>
+                  <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{animationDelay: '200ms'}}></span>
+              </div>
+              
+              <p className="absolute bottom-10 text-white/20 text-[10px] uppercase tracking-widest font-mono">
+                  Conexão Segura Estabelecida
+              </p>
           </div>
       )}
 
